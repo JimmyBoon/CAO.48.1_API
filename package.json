@@ -1,0 +1,17 @@
+{
+  "name": "cao481-api",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker proxy for the CAO 48.1 Compliance API container",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

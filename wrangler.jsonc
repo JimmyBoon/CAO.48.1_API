@@ -1,0 +1,63 @@
+{
+  // ─── CAO 48.1 Compliance API — Cloudflare Containers Configuration ───
+  //
+  // Deploys the FastAPI Docker container to Cloudflare's edge network
+  // via a thin Worker proxy.
+  //
+  // Prerequisites:
+  //   - Docker running locally (for image build)
+  //   - Wrangler CLI installed: npm install -g wrangler
+  //   - Cloudflare account authenticated: wrangler login
+  //
+  // Deploy:
+  //   npx wrangler deploy
+  //
+  // Check status:
+  //   npx wrangler containers list
+  //
+  // Logs:
+  //   npx wrangler tail
+
+  "name": "cao481-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-03-25",
+
+  // ─── Container definition ───────────────────────────────────────────
+  // Points to the Dockerfile in the project root.
+  // The image must support linux/amd64 architecture.
+  "containers": [
+    {
+      "class_name": "CAO481Container",
+      "image": "./Dockerfile",
+      "max_instances": 3
+    }
+  ],
+
+  // ─── Durable Object binding ─────────────────────────────────────────
+  // Each container instance is backed by a Durable Object.
+  // The Worker uses this binding to route requests to containers.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CAO481_CONTAINER",
+        "class_name": "CAO481Container"
+      }
+    ]
+  },
+
+  // ─── Migration (required for Durable Objects with SQLite) ───────────
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CAO481Container"]
+    }
+  ],
+
+  // ─── Environment variables for the Worker ───────────────────────────
+  // Note: Container env vars are set in src/index.js via the
+  // CAO481Container class. Secrets (like RAPIDAPI_PROXY_SECRET)
+  // should be set via: npx wrangler secret put RAPIDAPI_PROXY_SECRET
+  "vars": {
+    "ENVIRONMENT": "production"
+  }
+}

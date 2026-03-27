@@ -1,0 +1,23 @@
+# docker-compose.yml — Local development for CAO 48.1 Compliance API
+#
+# Usage:
+#   docker compose up --build      # Build and start
+#   docker compose up -d           # Detached mode
+#   docker compose logs -f         # Follow logs
+
+services:
+  cao481-api:
+    build: .
+    container_name: cao481-api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - API_VERSION=0.1.0
+      - LOG_LEVEL=info
+      - RAPIDAPI_PROXY_SECRET=
+    # For local dev, mount code for hot-reload
+    volumes:
+      - ./app:/app/app
+    # Override CMD for development with auto-reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
