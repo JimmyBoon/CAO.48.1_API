@@ -38,7 +38,7 @@ export class CAO481Container extends Container {
   // RAPIDAPI_PROXY_SECRET should be set as a Wrangler secret
   // rather than hardcoded here.
   envVars = {
-    ENVIRONMENT: "production",
+    ENVIRONMENT: "development",
     LOG_LEVEL: "info",
   };
 
@@ -69,7 +69,7 @@ export class CAO481Container extends Container {
  */
 function getRandomInstance(binding, poolSize) {
   const index = Math.floor(Math.random() * poolSize);
-  const id = binding.idFromName(`cao481-instance-${index}`);
+  const id = binding.idFromName(`cao481-v7-${index}`);
   return binding.get(id);
 }
 
@@ -89,6 +89,31 @@ const POOL_SIZE = 2;
  */
 export default {
   async fetch(request, env) {
+    // Validate RapidAPI proxy secret at the Worker level
+    const proxySecret = request.headers.get("X-RapidAPI-Proxy-Secret");
+    const expectedSecret = env.RAPIDAPI_PROXY_SECRET;
+
+    if (expectedSecret && proxySecret !== expectedSecret) {
+      return new Response(
+        JSON.stringify({
+          error: "forbidden",
+          message: "Invalid or missing RapidAPI proxy secret.",
+          debug: {
+            received_secret_length: proxySecret ? proxySecret.length : 0,
+            received_secret_first5: proxySecret ? proxySecret.substring(0, 5) : "null",
+            expected_secret_length: expectedSecret ? expectedSecret.length : 0,
+            expected_secret_first5: expectedSecret ? expectedSecret.substring(0, 5) : "null",
+            received_is_null: proxySecret === null,
+            received_is_empty: proxySecret === "",
+            headers_present: Object.fromEntries(
+              [...request.headers].filter(([k]) => k.toLowerCase().startsWith("x-rapid"))
+            ),
+          },
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     const container = getRandomInstance(env.CAO481_CONTAINER, POOL_SIZE);
     return await container.fetch(request);
   },
