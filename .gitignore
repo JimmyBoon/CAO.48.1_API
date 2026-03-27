@@ -28,6 +28,12 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+
 # Testing
 .pytest_cache/
 htmlcov/
