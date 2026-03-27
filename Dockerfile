@@ -4,7 +4,7 @@
 # Build:  docker build -t cao481-api .
 # Run:    docker run -p 8000:8000 --env-file .env cao481-api
 
-FROM python:3.12-slim AS base
+FROM --platform=linux/amd64 python:3.12-slim AS base
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \
