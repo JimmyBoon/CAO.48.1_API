@@ -35,6 +35,8 @@ from app.models.sections import (
     SectionDetailResponse,
     TableOfContentsResponse,
 )
+from app.routes.limits import router as limits_router
+from app.routes.calculate import router as calculate_router
 
 # ─── Logging ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -75,12 +77,16 @@ APPENDICES = [
 
 # ─── Endpoint registry ─────────────────────────────────────────────────
 # Tracks which endpoints are live vs planned. Update as phases are built.
-AVAILABLE_ENDPOINTS = ["/health", "/sections", "/sections/{section_id}"]
-PLANNED_ENDPOINTS = [
+AVAILABLE_ENDPOINTS = [
+    "/health",
+    "/sections",
+    "/sections/{section_id}",
     "/limits/fdp-table/{appendix}",
     "/limits/cumulative/{appendix}",
     "/calculate/max-fdp",
     "/calculate/min-off-duty",
+]
+PLANNED_ENDPOINTS = [
     "/validate/fdp",
     "/validate/off-duty",
     "/validate/cumulative",
@@ -202,6 +208,10 @@ app.add_middleware(RapidAPIProxyMiddleware)
 # ─── API prefix router ─────────────────────────────────────────────────
 # All endpoints live under /api/v1/cao481
 API_PREFIX = "/api/v1/cao481"
+
+# ─── Mount Phase 2 routers ────────────────────────────────────────────
+app.include_router(limits_router, prefix=API_PREFIX)
+app.include_router(calculate_router, prefix=API_PREFIX)
 
 
 # ─── Health endpoint ───────────────────────────────────────────────────

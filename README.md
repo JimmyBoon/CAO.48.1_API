@@ -88,25 +88,80 @@ In the RapidAPI Provider Dashboard:
 
 Configure tiers in the RapidAPI Monetisation tab.
 
+## Endpoints
+
+### Health
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/cao481/health` | API status and feature discovery |
+
+### Regulatory Content
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/cao481/sections` | Table of contents for CAO 48.1 |
+| GET | `/api/v1/cao481/sections/{section_id}` | Full text of a specific section or appendix |
+
+### Limits (Reference Data)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/cao481/limits/fdp-table/{appendix}` | FDP lookup table for an appendix |
+| GET | `/api/v1/cao481/limits/cumulative/{appendix}` | Cumulative limit thresholds |
+
+### Calculation
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/cao481/calculate/max-fdp` | Calculate maximum permissible FDP |
+| POST | `/api/v1/cao481/calculate/min-off-duty` | Calculate minimum required off-duty period |
+
+### Validation (Planned)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/cao481/validate/fdp` | Validate a single FDP |
+| POST | `/api/v1/cao481/validate/off-duty` | Validate an off-duty period |
+| POST | `/api/v1/cao481/validate/cumulative` | Check rolling-window limits |
+| POST | `/api/v1/cao481/validate/sequence` | Validate duty sequence patterns |
+| POST | `/api/v1/cao481/validate/roster` | Full roster validation |
+
 ## Project Structure
 
 ```
 cao481-api/
 ├── app/
 │   ├── __init__.py
-│   ├── config.py          # Pydantic Settings configuration
-│   ├── main.py            # FastAPI application and endpoints
-│   ├── middleware.py       # RapidAPI proxy secret validation
-│   └── models/
-│       ├── __init__.py
-│       └── health.py      # Health endpoint response models
+│   ├── config.py              # Pydantic Settings configuration
+│   ├── main.py                # FastAPI application and endpoint wiring
+│   ├── middleware.py           # RapidAPI proxy secret validation
+│   ├── parser.py              # CAO 48.1 markdown legislation parser
+│   ├── data/
+│   │   ├── cao481.md          # Full CAO 48.1 legislation text
+│   │   ├── fdp_tables.py      # FDP lookup tables for all 9 appendices
+│   │   ├── cumulative_limits.py # Cumulative flight/duty time thresholds
+│   │   └── off_duty_rules.py  # Off-duty period rules per appendix
+│   ├── engines/
+│   │   ├── fdp_calculator.py  # Max FDP calculation logic
+│   │   └── off_duty_calculator.py # Min off-duty calculation logic
+│   ├── models/
+│   │   ├── health.py          # Health endpoint response models
+│   │   ├── sections.py        # Regulatory content response models
+│   │   ├── limits.py          # Limits endpoint response models
+│   │   └── calculation.py     # Calculation request/response models
+│   └── routes/
+│       ├── limits.py          # /limits/* route handlers
+│       └── calculate.py       # /calculate/* route handlers
 ├── tests/
-│   ├── __init__.py
-│   └── test_health.py     # Health endpoint tests
+│   ├── test_health.py         # Health endpoint + middleware tests
+│   ├── test_sections.py       # Regulatory content tests
+│   ├── test_limits_endpoints.py    # Limits endpoint tests
+│   ├── test_fdp_calculator.py      # FDP calculation engine tests
+│   ├── test_off_duty_calculator.py # Off-duty calculation engine tests
+│   └── test_calculate_endpoints.py # Calculation endpoint tests
+├── src/
+│   └── index.js               # Cloudflare Worker proxy
 ├── .env.example
 ├── .gitignore
 ├── docker-compose.yml
 ├── Dockerfile
+├── wrangler.jsonc
 ├── README.md
 └── requirements.txt
 ```
@@ -116,8 +171,8 @@ cao481-api/
 | Phase | Scope | Status |
 |-------|-------|--------|
 | **0** | Health endpoint + skeleton + Docker + RapidAPI deploy | ✅ Complete |
-| **1** | Regulatory content + FDP table lookups | 🔲 Planned |
-| **2** | Max FDP / min off-duty calculators | 🔲 Planned |
+| **1** | Regulatory content endpoints + legislation parser | ✅ Complete |
+| **2** | FDP tables, cumulative limits, max-FDP & min-off-duty calculators | ✅ Complete |
 | **3** | FDP and off-duty validation | 🔲 Planned |
 | **4** | Cumulative and sequence validation | 🔲 Planned |
 | **5** | Full roster validation | 🔲 Planned |

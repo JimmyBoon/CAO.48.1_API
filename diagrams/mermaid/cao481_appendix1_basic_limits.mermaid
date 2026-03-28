@@ -1,0 +1,93 @@
+---
+title: "CAO 48.1 — Appendix 1: Basic Limits — Duty Validity Check"
+---
+flowchart TD
+    START([🛫 Proposed FDP under Appendix 1]) --> SLEEP
+
+    %% ─── SLEEP OPPORTUNITY ───
+    SLEEP{1. Sleep Opportunity Check\n§1.1 / §1.2}
+    SLEEP -->|Away from\nhome base| SLEEP_AWAY{≥8h consecutive sleep\nwithin 10h before FDP?}
+    SLEEP -->|At home\nbase| SLEEP_HOME{≥8h consecutive sleep\nwithin 12h before FDP?}
+    SLEEP_AWAY -->|No| FAIL_SLEEP([❌ INVALID\n§1.1 — Insufficient\nsleep opportunity])
+    SLEEP_HOME -->|No| FAIL_SLEEP
+    SLEEP_AWAY -->|Yes| TIMING
+    SLEEP_HOME -->|Yes| TIMING
+
+    %% ─── FDP TIMING WINDOW ───
+    TIMING{2. FDP Timing Window\n§2.1}
+    TIMING --> TIMING_START{FDP starts at or after\nearlier of MCT or 0700?}
+    TIMING_START -->|No| FAIL_TIMING([❌ INVALID\n§2.1a — FDP starts\nbefore permitted window])
+    TIMING_START -->|Yes| TIMING_END{FDP ends by 0100\nnext day local?}
+    TIMING_END -->|No| FAIL_TIMING2([❌ INVALID\n§2.1b — FDP ends\nafter 0100 next day])
+    TIMING_END -->|Yes| FDP_LIMIT
+
+    %% ─── FDP LIMIT LOOKUP ───
+    FDP_LIMIT{3. FDP Limit\n§2.2 / §2.3 / §2.4}
+    FDP_LIMIT --> START_TIME{What is FDP\nstart time?}
+    START_TIME -->|Before 0600\nafter MCT| MAX8A[Max FDP = 8h\n§2.3]
+    START_TIME -->|0600 – 1359| MAX9[Max FDP = 9h\n§2.2]
+    START_TIME -->|≥ 1400| MAX8B[Max FDP = 8h\n§2.4]
+    MAX8A --> LATE_CHECK
+    MAX9 --> LATE_CHECK
+    MAX8B --> LATE_CHECK
+
+    %% ─── LATE FDP CHECK ───
+    LATE_CHECK{4. Late FDP Check\n§2.5}
+    LATE_CHECK --> ENDS_AFTER_2200{FDP ends after\n2200 local?}
+    ENDS_AFTER_2200 -->|No| FDP_COMPARE
+    ENDS_AFTER_2200 -->|Yes| LATE_COUNT{≤3 late FDPs\nin 168h?}
+    LATE_COUNT -->|No| FAIL_LATE([❌ INVALID\n§2.5 — >3 late FDPs\nin 168 consecutive hours])
+    LATE_COUNT -->|Yes| FDP_COMPARE
+
+    %% ─── FDP DURATION CHECK ───
+    FDP_COMPARE{5. FDP Duration\nWithin Limit?}
+    FDP_COMPARE -->|Actual FDP\n≤ Max FDP| FLIGHT_TRAIN
+    FDP_COMPARE -->|Actual FDP\n> Max FDP| EXTENSION
+
+    %% ─── EXTENSION ───
+    EXTENSION{6. Extension Permitted?\n§3.1}
+    EXTENSION --> EXT_COND{ALL conditions met?\na. FDP commenced\nb. Unforeseen circumstances\nc. Operationally necessary\nd. FCM considers fit}
+    EXT_COND -->|No| FAIL_FDP([❌ INVALID\n§2.7 — FDP exceeds\nlimit, no valid extension])
+    EXT_COND -->|Yes| EXT_LIMIT{Actual FDP ≤\nMax FDP + 1h?}
+    EXT_LIMIT -->|No| FAIL_FDP
+    EXT_LIMIT -->|Yes| EXT_CUM{Extension would NOT\ncause cumulative flight\ntime limit breach? §3.3}
+    EXT_CUM -->|No| FAIL_FDP
+    EXT_CUM -->|Yes| FLIGHT_TRAIN
+
+    %% ─── FLIGHT TRAINING ───
+    FLIGHT_TRAIN{7. Flight Training?\n§2.6}
+    FLIGHT_TRAIN -->|No flight\ntraining| OFF_DUTY
+    FLIGHT_TRAIN -->|Yes| FT_CHECK{Training within\nfirst 7h of flight time?}
+    FT_CHECK -->|Yes| OFF_DUTY
+    FT_CHECK -->|No| FT_EXT{§3.2 extension?\nUnforeseen + necessary\n+ fit, ≤30min extra}
+    FT_EXT -->|Yes| OFF_DUTY
+    FT_EXT -->|No| FAIL_FT([❌ INVALID\n§2.6 — Flight training\noutside first 7h])
+
+    %% ─── OFF-DUTY PERIOD ───
+    OFF_DUTY{8. Off-Duty Period\n§4}
+    OFF_DUTY --> ODP_24{≥12h consecutive\noff-duty in any 24h?\n§4.1}
+    ODP_24 -->|No| FAIL_ODP([❌ INVALID\n§4.1 — <12h off-duty\nin 24h period])
+    ODP_24 -->|Yes| ODP_168{≥36h consecutive off-duty\nincl. 2 local nights\nin 168h before FDP end?\n§4.2a}
+    ODP_168 -->|No| FAIL_ODP2([❌ INVALID\n§4.2a — No 36h+2LN\nblock in 168h])
+    ODP_168 -->|Yes| ODP_28{≥6 days off-duty\nin 28 days before\nFDP commences?\n§4.2b}
+    ODP_28 -->|No| FAIL_ODP3([❌ INVALID\n§4.2b — <6 days off\nin 28 days])
+    ODP_28 -->|Yes| CUMULATIVE
+
+    %% ─── CUMULATIVE LIMITS ───
+    CUMULATIVE{9. Cumulative\nFlight Time §5}
+    CUMULATIVE --> CUM_28{Cumulative flight time\n≤100h in 28 days?\n§5.1}
+    CUM_28 -->|No| FAIL_CUM([❌ INVALID\n§5.1 — >100h flight\ntime in 28 days])
+    CUM_28 -->|Yes| CUM_365{Cumulative flight time\n≤1000h in 365 days?\n§5.2}
+    CUM_365 -->|No| FAIL_CUM2([❌ INVALID\n§5.2 — >1000h flight\ntime in 365 days])
+    CUM_365 -->|Yes| VALID([✅ DUTY IS VALID\nunder Appendix 1])
+
+    %% ─── STYLING ───
+    classDef failNode fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef passNode fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef decisionNode fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef limitNode fill:#fef3c7,stroke:#d97706,color:#92400e
+
+    class FAIL_SLEEP,FAIL_TIMING,FAIL_TIMING2,FAIL_LATE,FAIL_FDP,FAIL_FT,FAIL_ODP,FAIL_ODP2,FAIL_ODP3,FAIL_CUM,FAIL_CUM2 failNode
+    class VALID passNode
+    class SLEEP,TIMING,FDP_LIMIT,LATE_CHECK,FDP_COMPARE,EXTENSION,FLIGHT_TRAIN,OFF_DUTY,CUMULATIVE decisionNode
+    class MAX8A,MAX8B,MAX9 limitNode

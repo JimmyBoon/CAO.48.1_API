@@ -1,0 +1,107 @@
+---
+title: "CAO 48.1 — Appendix 4A: Balloon Operations — Duty Validity Check"
+---
+flowchart TD
+    START([🎈 Proposed FDP under Appendix 4A]) --> SLEEP
+
+    %% ═══════════════════════════════════════
+    %% 1. SLEEP OPPORTUNITY  §1
+    %% ═══════════════════════════════════════
+    SLEEP{1. Sleep Opportunity §1}
+    SLEEP --> SLP_OPT{Which option?}
+    SLP_OPT -->|Option A| SLP_A{≥8h consecutive sleep\nwithin 10h before FDP?\n§1a}
+    SLP_OPT -->|Option B| SLP_B{≥10h sleep\nincl. ≥6h consecutive\nwithin 24h before FDP?\n§1b}
+    SLP_A -->|No| TRY_B{Try Option B instead}
+    SLP_B -->|No| FAIL_SLP([❌ INVALID — §1\nNeither sleep option met])
+    TRY_B --> SLP_B
+    SLP_A -->|Yes| FDP_LOOKUP
+    SLP_B -->|Yes| FDP_LOOKUP
+
+    %% ═══════════════════════════════════════
+    %% 2. FDP LIMIT  §2
+    %% ═══════════════════════════════════════
+    FDP_LOOKUP{2. FDP Limit §2}
+    FDP_LOOKUP --> HAS_SPLIT{FDP contains\nsplit-duty rest?}
+    HAS_SPLIT -->|No| MAX6[Max FDP = 6h\n§2.1 Table]
+    HAS_SPLIT -->|Yes| MAX10[Max FDP = 10h\n§2.1 Table]
+    MAX6 --> FDP_6H
+    MAX10 --> SPLIT
+
+    %% ─── 6H CONTINUOUS LIMIT ───
+    FDP_6H{FDP >6h without\nstarting/completing\nsplit rest? §2.2}
+    FDP_6H -->|No, ≤6h| SPLIT
+    FDP_6H -->|Yes| FAIL_6H([❌ INVALID — §2.2\n>6h without split rest])
+
+    %% ═══════════════════════════════════════
+    %% 3. SPLIT DUTY  §3
+    %% ═══════════════════════════════════════
+    SPLIT{3. Split Duty\nExtension? §3}
+    SPLIT -->|No split duty| FDP_CMP
+    SPLIT -->|Yes| SD_NIGHT{Rest overlaps\n2100–0329 local?\n§3.3}
+
+    SD_NIGHT -->|No — Daytime| SD_DAY{Sleeping ≥4h?}
+    SD_DAY -->|Yes| SD_EXT[FDP + split rest duration\nmax 15h total §3.1\nODP: first 4h reduced\nby 2h §3.2]
+    SD_DAY -->|No| SD_NOEXT[No extension beyond\n10h table limit]
+
+    SD_NIGHT -->|Yes — Night| SD_N7{Sleeping ≥7h\nconsecutive?}
+    SD_N7 -->|No| FAIL_SD([❌ INVALID — §3.3a\nNight split requires ≥7h sleeping])
+    SD_N7 -->|Yes| SD_NVAL[Max 15h §3.1\nNo ODP reduction §3.3b]
+
+    SD_EXT --> SD_REM
+    SD_NOEXT --> FDP_CMP
+    SD_NVAL --> SD_REM
+
+    SD_REM{Post-split FDP\n≤5h? §3.4}
+    SD_REM -->|Yes| FDP_CMP
+    SD_REM -->|No| FAIL_SDREM([❌ INVALID — §3.4\nPost-split >5h])
+
+    %% ═══════════════════════════════════════
+    %% 4. FDP vs LIMIT
+    %% ═══════════════════════════════════════
+    FDP_CMP{4. Actual FDP ≤\nadjusted max?}
+    FDP_CMP -->|Yes| EXT_CHK
+    FDP_CMP -->|No| EXT_CHK
+
+    EXT_CHK{Extension? §4}
+    EXT_CHK -->|FDP within limit| ODP
+    EXT_CHK -->|Exceeds, unforeseen\n+ necessary + fit\n+ ≤1h extension| EXT_OK{Would NOT breach\ncumulative? §4.4}
+    EXT_CHK -->|Exceeds, conditions\nnot met or >1h| FAIL_FDP([❌ INVALID — §2/§4\nFDP exceeds limit])
+    EXT_OK -->|Yes| ODP
+    EXT_OK -->|No| FAIL_FDP
+
+    %% ═══════════════════════════════════════
+    %% 5. OFF-DUTY  §5
+    %% ═══════════════════════════════════════
+    ODP{5. Off-Duty §5}
+    ODP --> ODP_STD{Standard: ≥10h\nconsecutive? §5.1}
+    ODP_STD -->|Yes| ODP_ROLLING
+    ODP_STD -->|No| ODP_SPLIT{Alternative §5.2?\n2× ODP ≥4h each\ntotal ≥13h\nwith ≤2h duty between}
+    ODP_SPLIT -->|Yes| ODP_ROLLING
+    ODP_SPLIT -->|No| FAIL_ODP([❌ INVALID — §5\nInsufficient off-duty])
+
+    ODP_ROLLING{≥2 full days off\nin 14 days before\nFDP end? §5.3\nFull day = midnight\nto midnight §5.4}
+    ODP_ROLLING -->|No| FAIL_ODP2([❌ INVALID — §5.3])
+    ODP_ROLLING -->|Yes| CUM
+
+    %% ═══════════════════════════════════════
+    %% 6. CUMULATIVE  §6 / §7
+    %% ═══════════════════════════════════════
+    CUM{6. Cumulative}
+    CUM --> CF{Flight ≤50h\nin 28d? §6}
+    CF -->|No| FAIL_CF([❌ INVALID — §6])
+    CF -->|Yes| CD1{Duty ≤45h\nin 168h? §7.1}
+    CD1 -->|No| FAIL_CD([❌ INVALID — §7.1])
+    CD1 -->|Yes| CD2{Duty ≤84h\nin 336h? §7.2}
+    CD2 -->|No| FAIL_CD2([❌ INVALID — §7.2])
+    CD2 -->|Yes| VALID([✅ DUTY IS VALID\nunder Appendix 4A])
+
+    %% ─── STYLING ───
+    classDef failNode fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef passNode fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef decisionNode fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef limitNode fill:#fef3c7,stroke:#d97706,color:#92400e
+
+    class FAIL_SLP,FAIL_6H,FAIL_SD,FAIL_SDREM,FAIL_FDP,FAIL_ODP,FAIL_ODP2,FAIL_CF,FAIL_CD,FAIL_CD2 failNode
+    class VALID passNode
+    class SLEEP,FDP_LOOKUP,SPLIT,FDP_CMP,EXT_CHK,ODP,CUM decisionNode
+    class MAX6,MAX10,SD_EXT,SD_NVAL limitNode
