@@ -4,7 +4,7 @@ main.py — CAO 48.1 Compliance API entry point.
 A stateless REST API for validating flight crew duty periods against
 the Australian Civil Aviation Order 48.1 Instrument 2019.
 
-Phase 0: Health endpoint, RapidAPI middleware, OpenAPI spec generation.
+Phase 0+1: Health endpoint, regulatory content endpoints, RapidAPI middleware.
 
 Usage:
     # Local development
@@ -17,16 +17,23 @@ Usage:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Path
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.middleware import RapidAPIProxyMiddleware
+from app.parser import get_legislation, get_section, get_table_of_contents
 from app.models.health import (
     AppendixStatus,
     EndpointsInfo,
     HealthResponse,
     LegislationInfo,
+)
+from app.models.sections import (
+    GroupDetailResponse,
+    SectionDetailResponse,
+    TableOfContentsResponse,
 )
 
 # ─── Logging ───────────────────────────────────────────────────────────
@@ -68,10 +75,8 @@ APPENDICES = [
 
 # ─── Endpoint registry ─────────────────────────────────────────────────
 # Tracks which endpoints are live vs planned. Update as phases are built.
-AVAILABLE_ENDPOINTS = ["/health"]
+AVAILABLE_ENDPOINTS = ["/health", "/sections", "/sections/{section_id}"]
 PLANNED_ENDPOINTS = [
-    "/sections",
-    "/sections/{section_id}",
     "/limits/fdp-table/{appendix}",
     "/limits/cumulative/{appendix}",
     "/calculate/max-fdp",
@@ -103,6 +108,13 @@ async def lifespan(app: FastAPI):
             "RAPIDAPI_PROXY_SECRET is not set — all requests will be rejected "
             "in production mode!"
         )
+    # Parse the CAO 48.1 legislation at startup
+    leg = get_legislation()
+    logger.info(
+        "CAO 48.1 loaded: %d groups, %d sections",
+        len(leg.groups),
+        len(leg.section_index),
+    )
     yield
     logger.info("Shutting down %s", settings.app_name)
 
@@ -287,3 +299,103 @@ async def health_check() -> HealthResponse:
             planned=PLANNED_ENDPOINTS,
         ),
     )
+
+
+# ─── Regulatory Content: Table of Contents ─────────────────────────────
+@app.get(
+    f"{API_PREFIX}/sections",
+    response_model=TableOfContentsResponse,
+    tags=["Regulatory Content"],
+    summary="Table of contents for CAO 48.1",
+    description=(
+        "Returns the full table of contents for CAO 48.1 Instrument 2019, "
+        "listing all Parts and Appendices with their constituent sections. "
+        "Each section includes an ID that can be used with the "
+        "`GET /sections/{section_id}` endpoint to retrieve the full text."
+    ),
+)
+async def list_sections() -> TableOfContentsResponse:
+    """
+    Return the full table of contents for CAO 48.1.
+
+    Lists all Parts (1–3) and Appendices (1–7) with their
+    constituent sections. Each section entry includes an ID
+    for use with the section detail endpoint.
+    """
+    legislation = get_legislation()
+    toc = get_table_of_contents(legislation)
+    return TableOfContentsResponse(**toc)
+
+
+# ─── Regulatory Content: Section Detail ────────────────────────────────
+@app.get(
+    f"{API_PREFIX}/sections/{{section_id}}",
+    response_model=SectionDetailResponse | GroupDetailResponse,
+    tags=["Regulatory Content"],
+    summary="Get a specific section or appendix of CAO 48.1",
+    description=(
+        "Returns the full text of a specific section or group from "
+        "CAO 48.1 Instrument 2019.\n\n"
+        "**Supported lookup patterns:**\n\n"
+        "- `PART 1`, `PART 2`, `PART 3` — returns the Part with a "
+        "list of its sections\n"
+        "- `APPENDIX 1`, `APPENDIX 2`, ..., `APPENDIX 7` — returns "
+        "the Appendix with a list of its sections\n"
+        "- `6`, `7`, `14` — returns an individual section from the Parts "
+        "(e.g. section 6 is Definitions)\n"
+        "- `APPENDIX 3.2`, `APPENDIX 1.4` — returns a specific "
+        "section within an Appendix\n\n"
+        "Use `GET /sections` to discover available section IDs."
+    ),
+    responses={
+        200: {"description": "Section or group found and returned."},
+        404: {
+            "description": "Section not found.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "not_found",
+                        "message": "Section 'APPENDIX 99' not found.",
+                        "hint": "Use GET /sections to see available section IDs.",
+                    }
+                }
+            },
+        },
+    },
+)
+async def get_section_detail(
+    section_id: str = Path(
+        description=(
+            "Section identifier. Examples: 'PART 1', 'APPENDIX 3', "
+            "'6', 'APPENDIX 3.2'."
+        ),
+        examples=["APPENDIX 3", "APPENDIX 3.2", "6"],
+    ),
+):
+    """
+    Return the full text of a specific section or group from CAO 48.1.
+
+    Accepts group-level IDs (PART X, APPENDIX X) which return a list
+    of sections within the group, or section-level IDs (APPENDIX X.N, N)
+    which return the full body text of that section.
+    """
+    legislation = get_legislation()
+    result = get_section(legislation, section_id)
+
+    if result is None:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "not_found",
+                "message": f"Section '{section_id}' not found.",
+                "hint": "Use GET /sections to see available section IDs.",
+            },
+        )
+
+    # Determine if this is a group or section response
+    if "sections" in result:
+        # Group-level response
+        return GroupDetailResponse(**result)
+    else:
+        # Section-level response
+        return SectionDetailResponse(**result)
