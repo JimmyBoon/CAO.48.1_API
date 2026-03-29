@@ -113,11 +113,15 @@ Configure tiers in the RapidAPI Monetisation tab.
 | POST | `/api/v1/cao481/calculate/max-fdp` | Calculate maximum permissible FDP |
 | POST | `/api/v1/cao481/calculate/min-off-duty` | Calculate minimum required off-duty period |
 
+### Validation
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/cao481/validate/fdp` | Validate a single FDP against calculated limits |
+| POST | `/api/v1/cao481/validate/off-duty` | Validate an off-duty period against minimum requirements |
+
 ### Validation (Planned)
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/cao481/validate/fdp` | Validate a single FDP |
-| POST | `/api/v1/cao481/validate/off-duty` | Validate an off-duty period |
 | POST | `/api/v1/cao481/validate/cumulative` | Check rolling-window limits |
 | POST | `/api/v1/cao481/validate/sequence` | Validate duty sequence patterns |
 | POST | `/api/v1/cao481/validate/roster` | Full roster validation |
@@ -139,22 +143,29 @@ cao481-api/
 │   │   └── off_duty_rules.py  # Off-duty period rules per appendix
 │   ├── engines/
 │   │   ├── fdp_calculator.py  # Max FDP calculation logic
-│   │   └── off_duty_calculator.py # Min off-duty calculation logic
+│   │   ├── off_duty_calculator.py # Min off-duty calculation logic
+│   │   ├── fdp_validator.py   # FDP validation logic
+│   │   └── off_duty_validator.py  # Off-duty validation logic
 │   ├── models/
 │   │   ├── health.py          # Health endpoint response models
 │   │   ├── sections.py        # Regulatory content response models
 │   │   ├── limits.py          # Limits endpoint response models
-│   │   └── calculation.py     # Calculation request/response models
+│   │   ├── calculation.py     # Calculation request/response models
+│   │   └── validation.py      # Validation request/response models
 │   └── routes/
 │       ├── limits.py          # /limits/* route handlers
-│       └── calculate.py       # /calculate/* route handlers
+│       ├── calculate.py       # /calculate/* route handlers
+│       └── validate.py        # /validate/* route handlers
 ├── tests/
 │   ├── test_health.py         # Health endpoint + middleware tests
 │   ├── test_sections.py       # Regulatory content tests
-│   ├── test_limits_endpoints.py    # Limits endpoint tests
-│   ├── test_fdp_calculator.py      # FDP calculation engine tests
-│   ├── test_off_duty_calculator.py # Off-duty calculation engine tests
-│   └── test_calculate_endpoints.py # Calculation endpoint tests
+│   ├── test_limits_endpoints.py      # Limits endpoint tests
+│   ├── test_fdp_calculator.py        # FDP calculation engine tests
+│   ├── test_off_duty_calculator.py   # Off-duty calculation engine tests
+│   ├── test_calculate_endpoints.py   # Calculation endpoint tests
+│   ├── test_fdp_validator.py         # FDP validation engine tests
+│   ├── test_off_duty_validator.py    # Off-duty validation engine tests
+│   └── test_validate_endpoints.py    # Validation endpoint tests
 ├── src/
 │   └── index.js               # Cloudflare Worker proxy
 ├── .env.example
@@ -173,7 +184,7 @@ cao481-api/
 | **0** | Health endpoint + skeleton + Docker + RapidAPI deploy | ✅ Complete |
 | **1** | Regulatory content endpoints + legislation parser | ✅ Complete |
 | **2** | FDP tables, cumulative limits, max-FDP & min-off-duty calculators | ✅ Complete |
-| **3** | FDP and off-duty validation | 🔲 Planned |
+| **3** | FDP and off-duty validation | ✅ Complete |
 | **4** | Cumulative and sequence validation | 🔲 Planned |
 | **5** | Full roster validation | 🔲 Planned |
 | **6** | MCP server wrapper | 🔲 Planned |
