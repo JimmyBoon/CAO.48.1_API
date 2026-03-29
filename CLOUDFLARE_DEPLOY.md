@@ -90,9 +90,9 @@ https://cao481-api.<YOUR_SUBDOMAIN>.workers.dev/api/v1/cao481/health
 
 1. Go to rapidapi.com/studio → Add API Project
 2. Set the Base URL to your Workers URL:
-   `https://cao481-api.<YOUR_SUBDOMAIN>.workers.dev`
+   `https://cao481-api.jwboon.workers.dev/`
 3. Import OpenAPI spec from:
-   `https://cao481-api.<YOUR_SUBDOMAIN>.workers.dev/openapi.json`
+   `https://cao481-api.jwboon.workers.dev/openapi.json`
 4. Copy the X-RapidAPI-Proxy-Secret from the RapidAPI Security tab
 5. Update the Wrangler secret:
    `npx wrangler secret put RAPIDAPI_PROXY_SECRET`

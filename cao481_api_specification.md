@@ -87,7 +87,7 @@ origins = [
 ## 4. Base URL
 
 ```
-/api/v1/cao481
+https://cao481-api.jwboon.workers.dev/
 ```
 
 The full RapidAPI consumer URL will be:

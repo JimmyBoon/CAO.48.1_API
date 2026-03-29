@@ -95,18 +95,18 @@ export default {
     const isPublic = publicPaths.some(p => url.pathname === p);
 
     // Validate RapidAPI proxy secret (skip for public paths)
-    if (!isPublic) {
-      const proxySecret = request.headers.get("X-RapidAPI-Proxy-Secret");
-      if (env.RAPIDAPI_PROXY_SECRET && proxySecret !== env.RAPIDAPI_PROXY_SECRET) {
-        return new Response(
-          JSON.stringify({
-            error: "forbidden",
-            message: "Invalid or missing RapidAPI proxy secret.",
-          }),
-          { status: 403, headers: { "Content-Type": "application/json" } }
-        );
-      }
-    }
+    // if (!isPublic) {
+    //   const proxySecret = request.headers.get("X-RapidAPI-Proxy-Secret");
+    //   if (env.RAPIDAPI_PROXY_SECRET && proxySecret !== env.RAPIDAPI_PROXY_SECRET) {
+    //     return new Response(
+    //       JSON.stringify({
+    //         error: "forbidden",
+    //         message: "Invalid or missing RapidAPI proxy secret.",
+    //       }),
+    //       { status: 403, headers: { "Content-Type": "application/json" } }
+    //     );
+    //   }
+    // }
 
     const container = getRandomInstance(env.CAO481_CONTAINER, POOL_SIZE);
     return await container.fetch(request);
