@@ -48,31 +48,31 @@ logger = logging.getLogger(__name__)
 # ─── Appendix definitions ──────────────────────────────────────────────
 # Central registry of all appendices — status updated as features are built.
 APPENDICES = [
-    AppendixStatus(id="1", title="Basic Limits", status="planned"),
+    AppendixStatus(id="1", title="Basic Limits", status="available"),
     AppendixStatus(
-        id="2", title="Multi-Pilot Operations", status="planned"
+        id="2", title="Multi-Pilot Operations", status="available"
     ),
     AppendixStatus(
         id="3",
         title="Multi-Pilot Operations Except Complex",
-        status="planned",
+        status="available",
     ),
-    AppendixStatus(id="4", title="Any Operations", status="planned"),
-    AppendixStatus(id="4A", title="Balloon Operations", status="planned"),
+    AppendixStatus(id="4", title="Any Operations", status="available"),
+    AppendixStatus(id="4A", title="Balloon Operations", status="available"),
     AppendixStatus(
         id="4B",
         title="Medical Transport & Emergency Service Operations",
-        status="planned",
+        status="available",
     ),
     AppendixStatus(
         id="5",
         title="Aerial Work & Associated Flight Training",
-        status="planned",
+        status="available",
     ),
     AppendixStatus(
-        id="5A", title="Daylight Aerial Work", status="planned"
+        id="5A", title="Daylight Aerial Work", status="available"
     ),
-    AppendixStatus(id="6", title="Flight Training", status="planned"),
+    AppendixStatus(id="6", title="Flight Training", status="available"),
 ]
 
 # ─── Endpoint registry ─────────────────────────────────────────────────
