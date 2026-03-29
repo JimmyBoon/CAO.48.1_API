@@ -1,0 +1,142 @@
+---
+title: "CAO 48.1 — Appendix 6: Flight Training — Duty Validity Check"
+---
+flowchart TD
+    START([🎓 Proposed FDP under Appendix 6]) --> SLEEP
+
+    %% ═══════════════════════════════════════
+    %% 1. SLEEP OPPORTUNITY  §1
+    %% ═══════════════════════════════════════
+    SLEEP{1. Sleep Opportunity §1}
+    SLEEP --> SLP{≥8h consecutive sleep\nwithin 12h before\nFDP or standby?}
+    SLP -->|No| FAIL_SLP([❌ INVALID — §1])
+    SLP -->|Yes| FDP_LOOKUP
+
+    %% ═══════════════════════════════════════
+    %% 2. FDP LIMIT — Table 2.1  §2
+    %% ═══════════════════════════════════════
+    FDP_LOOKUP{2. FDP Limit\nTable 2.1 §2.1}
+    FDP_LOOKUP --> TM{Local time\nat start?}
+    TM -->|0500–0559| F9A[9h]
+    TM -->|0600–0659| F10A[10h]
+    TM -->|0700–0759| F10B[10h]
+    TM -->|0800–1059| F11[11h]
+    TM -->|1100–1359| F10C[10h]
+    TM -->|1400–2259| F9B[9h]
+    TM -->|2300–0459| F8[8h]
+
+    F9A --> FLT_TIME
+    F10A --> FLT_TIME
+    F10B --> FLT_TIME
+    F11 --> FLT_TIME
+    F10C --> FLT_TIME
+    F9B --> FLT_TIME
+    F8 --> FLT_TIME
+
+    %% ═══════════════════════════════════════
+    %% 3. FLIGHT TIME LIMIT  §2.2
+    %% ═══════════════════════════════════════
+    FLT_TIME{3. Flight Time\n≤7h? §2.2}
+    FLT_TIME -->|Yes| SPLIT
+    FLT_TIME -->|No| FAIL_FT([❌ INVALID — §2.2\nFlight time >7h])
+
+    %% ═══════════════════════════════════════
+    %% 4. SPLIT DUTY  §3
+    %% ═══════════════════════════════════════
+    SPLIT{4. Split Duty? §3}
+    SPLIT -->|No| WOCL
+    SPLIT -->|Yes| SD_NIGHT{Rest overlaps\n2300–0529 local?}
+
+    SD_NIGHT -->|No — Daytime| SD_TYPE{Accommodation?}
+    SD_TYPE -->|Sleeping ≥4h| SD4[+4h extension §3.1\nODP: first 4h reduced\nby 2h §3.2]
+    SD_TYPE -->|Resting ≥2h\nor Sleeping 2–3.9h| SDHALF[+half rest\nmax +2h §3.3]
+    SD_TYPE -->|<2h| SDNO[No extension]
+
+    SD_NIGHT -->|Yes — Night| SDN{Sleeping ≥7h\nconsecutive?}
+    SDN -->|No| FAIL_SD([❌ INVALID — §3.4\nNight split requires\n≥7h sleeping])
+    SDN -->|Yes| SDN15[Max FDP → 15h §3.4b\nNo ODP reduction §3.4c]
+
+    SD4 --> SD_REM
+    SDHALF --> SD_REM
+    SDNO --> WOCL
+    SDN15 --> SD_REM
+
+    SD_REM{Post-split ≤5h? §3.5\nUnless extended §4}
+    SD_REM -->|Yes| WOCL
+    SD_REM -->|No| FAIL_SD2([❌ INVALID — §3.5])
+
+    %% ═══════════════════════════════════════
+    %% 5. WOCL & EARLY STARTS  §10
+    %% ═══════════════════════════════════════
+    WOCL{5. WOCL & Early\nStarts §10}
+    WOCL --> ES{Consecutive early\nstarts 0500–0659?}
+    ES -->|≤3| WOCL2
+    ES -->|4th| ES4[FDP −2h §10.3a]
+    ES -->|5th| ES5[FDP −4h §10.3b]
+    ES -->|≥6th| FAIL_ES([❌ INVALID — §10.1])
+    ES4 --> WOCL2
+    ES5 --> WOCL2
+
+    WOCL2{WOCL 0200–0559\ninfringement?}
+    WOCL2 -->|No or ≤3 consec| FDP_CMP
+    WOCL2 -->|>3 without LN| FAIL_WOCL([❌ INVALID — §10.2])
+
+    %% ═══════════════════════════════════════
+    %% 6. FDP vs LIMIT
+    %% ═══════════════════════════════════════
+    FDP_CMP{6. Actual FDP ≤\nadjusted max?}
+    FDP_CMP -->|Yes| STANDBY
+    FDP_CMP -->|Exceeds by ≤1h| EXT{Extension §4.3?\nUnforeseen, PIC,\nFCMs fit}
+    FDP_CMP -->|Exceeds by >1h| FAIL_FDP([❌ INVALID — §11])
+    EXT --> EXT_CUM{Cumulative OK? §4.6}
+    EXT_CUM -->|Yes| STANDBY
+    EXT_CUM -->|No| FAIL_FDP
+
+    %% ═══════════════════════════════════════
+    %% 7. STANDBY  §5
+    %% ═══════════════════════════════════════
+    STANDBY{7. Preceded by\nstandby? §5}
+    STANDBY -->|No| ODP
+    STANDBY -->|Yes| STB1{≤14h? §5.1}
+    STB1 -->|No| FAIL_STB([❌ INVALID — §5.1])
+    STB1 -->|Yes| STB2{If >4h: FDP reduced\nby excess §5.2\nStandby+FDP ≤16h? §5.3}
+    STB2 -->|Yes| ODP
+    STB2 -->|No| FAIL_STB2([❌ INVALID — §5.3])
+
+    %% ═══════════════════════════════════════
+    %% 8. OFF-DUTY  §7
+    %% ═══════════════════════════════════════
+    ODP{8. Off-Duty §7}
+    ODP --> ODP_CALC[Min ODP = 12h +\n1.5× excess of FDP\n+ post-FDP duty over 12h\n§7.1]
+    ODP_CALC --> ODP_MET{Actual ODP ≥ min?}
+    ODP_MET -->|No| FAIL_ODP([❌ INVALID — §7.1])
+    ODP_MET -->|Yes| ODP_36{≥36h+2LN in 168h\nbefore FDP end? §7.2}
+    ODP_36 -->|No| FAIL_ODP2([❌ INVALID — §7.2])
+    ODP_36 -->|Yes| ODP_6D{≥6 days off in\n28 days? §7.3}
+    ODP_6D -->|No| FAIL_ODP3([❌ INVALID — §7.3])
+    ODP_6D -->|Yes| CUM
+
+    %% ═══════════════════════════════════════
+    %% 9. CUMULATIVE  §8 / §9
+    %% ═══════════════════════════════════════
+    CUM{9. Cumulative}
+    CUM --> CD1{Duty ≤60h/168h? §9.1}
+    CD1 -->|No| FAIL_CD([❌ §9.1])
+    CD1 -->|Yes| CD2{Duty ≤100h/336h? §9.2}
+    CD2 -->|No| FAIL_CD2([❌ §9.2])
+    CD2 -->|Yes| CF1{Flight ≤100h/28d? §8.1}
+    CF1 -->|No| FAIL_CF([❌ §8.1])
+    CF1 -->|Yes| CF2{Flight ≤1000h/365d? §8.2}
+    CF2 -->|No| FAIL_CF2([❌ §8.2])
+    CF2 -->|Yes| VALID([✅ DUTY IS VALID\nunder Appendix 6])
+
+    %% ─── STYLING ───
+    classDef failNode fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef passNode fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef decisionNode fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef limitNode fill:#fef3c7,stroke:#d97706,color:#92400e
+
+    class FAIL_SLP,FAIL_FT,FAIL_SD,FAIL_SD2,FAIL_ES,FAIL_WOCL,FAIL_FDP,FAIL_STB,FAIL_STB2,FAIL_ODP,FAIL_ODP2,FAIL_ODP3,FAIL_CD,FAIL_CD2,FAIL_CF,FAIL_CF2 failNode
+    class VALID passNode
+    class SLEEP,FDP_LOOKUP,FLT_TIME,SPLIT,WOCL,FDP_CMP,STANDBY,ODP,CUM decisionNode
+    class F9A,F10A,F10B,F11,F10C,F9B,F8,SD4,SDHALF,SDN15,ES4,ES5,ODP_CALC limitNode

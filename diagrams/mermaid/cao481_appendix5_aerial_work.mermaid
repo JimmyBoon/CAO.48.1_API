@@ -1,0 +1,154 @@
+---
+title: "CAO 48.1 — Appendix 5: Aerial Work & Associated Flight Training — Duty Validity Check"
+---
+flowchart TD
+    START([✈️ Proposed FDP under Appendix 5]) --> NFD
+
+    %% ═══════════════════════════════════════
+    %% 1. NON-FLYING DUTY REDUCTION  §1.5
+    %% ═══════════════════════════════════════
+    NFD{1. Non-Flying Duties\nin 8h before FDP? §1.5}
+    NFD -->|No| FDP_LOOKUP
+    NFD -->|Yes| NFD_RED[Reduce max FDP by\ngreater of: 30min or\ntotal non-flying duty §1.5]
+    NFD_RED --> FDP_LOOKUP
+
+    %% ═══════════════════════════════════════
+    %% 2. FDP LIMIT — Table 1.1  §1
+    %% ═══════════════════════════════════════
+    FDP_LOOKUP{2. FDP Limit\nTable 1.1 §1.1}
+    FDP_LOOKUP --> OP{Operation type?}
+    OP -->|Single-pilot| SP{Local time?}
+    OP -->|Multi-pilot| MP{Local time + sectors?}
+
+    SP -->|0500–0559| SP1[11h]
+    SP -->|0600–0659| SP2[11.5h]
+    SP -->|0700–1159| SP3[12h]
+    SP -->|1200–1459| SP4[11h]
+    SP -->|1500–1559| SP5[10.5h]
+    SP -->|1600–0459| SP6[10h]
+
+    MP -->|0500–0559| MP1[1–2s: 12h · 3+s: 12h]
+    MP -->|0600–0659| MP2[1–2s: 13h · 3+s: 12.5h]
+    MP -->|0700–1159| MP3[1–2s: 14h · 3+s: 13h]
+    MP -->|1200–1459| MP4[1–2s: 13h · 3+s: 12h]
+    MP -->|1500–1559| MP5[1–2s: 12h · 3+s: 11.5h]
+    MP -->|1600–0459| MP6[1–2s: 11h · 3+s: 11h]
+
+    SP1 --> INC
+    SP2 --> INC
+    SP3 --> INC
+    SP4 --> INC
+    SP5 --> INC
+    SP6 --> INC
+    MP1 --> INC
+    MP2 --> INC
+    MP3 --> INC
+    MP4 --> INC
+    MP5 --> INC
+    MP6 --> INC
+
+    %% ═══════════════════════════════════════
+    %% 3. INCREASED FDP  §1.3
+    %% ═══════════════════════════════════════
+    INC{3. Increased FDP? §1.3}
+    INC -->|No| FT_CHK
+    INC -->|Yes| INC_C{ALL conditions met?\na. ≤2 increased FDPs in 168h\nb. ODP before ≥12h\nc. ODP after ≥12h\nd. NOT increased by split §1.4}
+    INC_C -->|All met| INC_V[Single: 12h max\nMulti: 14h max §1.3]
+    INC_C -->|Failed| FAIL_INC([❌ INVALID — §1.4])
+    INC_V --> FT_CHK
+
+    %% ═══════════════════════════════════════
+    %% 4. FLIGHT TRAINING  §1.2
+    %% ═══════════════════════════════════════
+    FT_CHK{4. Flight Training? §1.2}
+    FT_CHK -->|No| NIGHT_LIM
+    FT_CHK -->|Yes| FT7{Within first 7h?}
+    FT7 -->|Yes| NIGHT_LIM
+    FT7 -->|No| FT_EXT{§3.3 extension?\nUnforeseen + necessary\n+ fit, ≤30min}
+    FT_EXT -->|Yes| NIGHT_LIM
+    FT_EXT -->|No| FAIL_FT([❌ INVALID — §1.2])
+
+    %% ═══════════════════════════════════════
+    %% 5. NIGHT OPERATIONS LIMIT  §1.6
+    %% ═══════════════════════════════════════
+    NIGHT_LIM{5. Night Ops Limit §1.6}
+    NIGHT_LIM --> NIGHT{FDP includes\nmidnight–0459 local?}
+    NIGHT -->|No| SPLIT
+    NIGHT -->|Yes| NIGHT_CT{≤4 such FDPs\nin 168h? §1.6}
+    NIGHT_CT -->|Yes| SPLIT
+    NIGHT_CT -->|No| FAIL_NIGHT([❌ INVALID — §1.6\n>4 night FDPs in 168h])
+
+    %% ═══════════════════════════════════════
+    %% 6. SPLIT DUTY  §2
+    %% ═══════════════════════════════════════
+    SPLIT{6. Split Duty? §2}
+    SPLIT -->|No| FDP_CMP
+    SPLIT -->|Yes| SD_TYPE{Accommodation?}
+    SD_TYPE -->|Sleeping ≥3h| SD_SLP[FDP + split duration\n§2.1]
+    SD_TYPE -->|Resting ≥2h| SD_RST[+half split duration\nmax +2h §2.2]
+    SD_TYPE -->|<2h| SD_NO[No extension]
+
+    SD_SLP --> SD_REM
+    SD_RST --> SD_REM
+    SD_NO --> FDP_CMP
+
+    SD_REM{Post-split ≤6h\n+ any extension? §2.3}
+    SD_REM -->|Yes| FDP_CMP
+    SD_REM -->|No| FAIL_SD([❌ INVALID — §2.3])
+
+    %% ═══════════════════════════════════════
+    %% 7. FDP vs LIMIT
+    %% ═══════════════════════════════════════
+    FDP_CMP{7. Actual FDP ≤\nadjusted max?}
+    FDP_CMP -->|Yes| ODP
+    FDP_CMP -->|No| EXT{Extension? §3.1\nFCM discretion\n+2h max beyond table\nor table + split\nPIC consults all §3.2}
+    EXT -->|Yes + cum OK §3.6| EXT_ODP[ODP increased by\n1h per 30min extension\n§3.4]
+    EXT -->|No| FAIL_FDP([❌ INVALID — §7])
+    EXT_ODP --> ODP
+
+    %% ═══════════════════════════════════════
+    %% 8. OFF-DUTY  §5
+    %% ═══════════════════════════════════════
+    ODP{8. Off-Duty §5}
+    ODP --> ODP_TIME{ODP includes\n2300–0559?}
+    ODP_TIME -->|Yes — overnight| ODP_8[Min = 8h\n+ extension penalty §5.1a]
+    ODP_TIME -->|No — daytime| ODP_10[Min = 10h\n+ extension penalty §5.1b]
+    ODP_8 --> ODP_RED
+    ODP_10 --> ODP_RED
+
+    ODP_RED{If calc >12h:\n§3.5 may reduce to 12h\nif next FDP under App 5\n+ next ODP ≥36h+2LN}
+    ODP_RED --> ODP_MET{Actual ODP ≥ min?}
+    ODP_MET -->|No| FAIL_ODP([❌ INVALID — §5.1])
+    ODP_MET -->|Yes| ODP_ROLL
+
+    ODP_ROLL{Recovery? §5.2}
+    ODP_ROLL --> ODP_R1{Either:\na. 36h+2LN in 336h? or\nb. 72h+3LN in 504h?\n§5.2}
+    ODP_R1 -->|No| FAIL_ODP2([❌ INVALID — §5.2])
+    ODP_R1 -->|Yes| ODP_INC{If increased FDP §1.3\nused in 168h:\n≥36h+2LN in that period?\n§5.3}
+    ODP_INC -->|N/A or met| CUM
+    ODP_INC -->|Failed| FAIL_ODP3([❌ INVALID — §5.3])
+
+    %% ═══════════════════════════════════════
+    %% 9. CUMULATIVE  §6
+    %% ═══════════════════════════════════════
+    CUM{9. Cumulative Flight Time §6}
+    CUM --> CF168{≤50h in 168h? §6.1}
+    CF168 -->|No| FAIL_CF1([❌ §6.1])
+    CF168 -->|Yes| CF28{≤170h in 28d? §6.2\nResets after 5d off §6.4}
+    CF28 -->|No| FAIL_CF2([❌ §6.2])
+    CF28 -->|Yes| CF90{≤450h in 90d? §6.3\nResets after 5d off §6.4}
+    CF90 -->|No| FAIL_CF3([❌ §6.3])
+    CF90 -->|Yes| CF365{≤1200h in 365d? §6.5\nResets after 28d off §6.6}
+    CF365 -->|No| FAIL_CF4([❌ §6.5])
+    CF365 -->|Yes| VALID([✅ DUTY IS VALID\nunder Appendix 5])
+
+    %% ─── STYLING ───
+    classDef failNode fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef passNode fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef decisionNode fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef limitNode fill:#fef3c7,stroke:#d97706,color:#92400e
+
+    class FAIL_INC,FAIL_FT,FAIL_NIGHT,FAIL_SD,FAIL_FDP,FAIL_ODP,FAIL_ODP2,FAIL_ODP3,FAIL_CF1,FAIL_CF2,FAIL_CF3,FAIL_CF4 failNode
+    class VALID passNode
+    class NFD,FDP_LOOKUP,INC,FT_CHK,NIGHT_LIM,SPLIT,FDP_CMP,ODP,CUM decisionNode
+    class SP1,SP2,SP3,SP4,SP5,SP6,MP1,MP2,MP3,MP4,MP5,MP6,INC_V,NFD_RED,SD_SLP,SD_RST,ODP_8,ODP_10,EXT_ODP limitNode

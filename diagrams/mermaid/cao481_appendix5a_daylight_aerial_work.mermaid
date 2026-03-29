@@ -1,0 +1,91 @@
+---
+title: "CAO 48.1 — Appendix 5A: Daylight Aerial Work — Duty Validity Check"
+---
+flowchart TD
+    START([☀️ Proposed FDP under Appendix 5A]) --> SLEEP
+
+    %% ═══════════════════════════════════════
+    %% 1. SLEEP OPPORTUNITY  §1
+    %% ═══════════════════════════════════════
+    SLEEP{1. Sleep Opportunity §1}
+    SLEEP --> SLP_A{≥8h consecutive sleep\nwithin 10h before FDP?\n§1a}
+    SLP_A -->|No| FAIL_SLP([❌ INVALID — §1a\nInsufficient sleep opportunity])
+    SLP_A -->|Yes| SLP_B{On each of the 3 local\nnights immediately before:\nno duties during 8h prior\nto 30min before MCT? §1b}
+    SLP_B -->|No| FAIL_SLP2([❌ INVALID — §1b\nDuties performed on prior\n3 nights — cannot use App 5A])
+    SLP_B -->|Yes| DAYLIGHT
+
+    %% ═══════════════════════════════════════
+    %% 2. DAYLIGHT WINDOW  §2.1
+    %% ═══════════════════════════════════════
+    DAYLIGHT{2. Daylight Window §2.1}
+    DAYLIGHT --> DL_START{FDP starts no earlier\nthan 30min before\nMCT? §2.1a}
+    DL_START -->|No| FAIL_DL([❌ INVALID — §2.1a\nFDP starts too early])
+    DL_START -->|Yes| DL_END{FDP ends by evening\ncivil twilight at\ncommencing location? §2.1b}
+    DL_END -->|No| FAIL_DL2([❌ INVALID — §2.1b\nFDP extends past\nevening twilight])
+    DL_END -->|Yes| FDP_LIM
+
+    %% ═══════════════════════════════════════
+    %% 3. FDP LIMIT  §2.2
+    %% ═══════════════════════════════════════
+    FDP_LIM{3. FDP Limit §2.2}
+    FDP_LIM --> FDP14[Max FDP = 14h in 1 day]
+
+    FDP14 --> FT_CHK
+
+    %% ═══════════════════════════════════════
+    %% 4. FLIGHT TRAINING  §2.3
+    %% ═══════════════════════════════════════
+    FT_CHK{4. Flight Training? §2.3}
+    FT_CHK -->|No| FDP_CMP
+    FT_CHK -->|Yes| FT7{Within first 7h\nof flight time?}
+    FT7 -->|Yes| FDP_CMP
+    FT7 -->|No| FT_EXT{§3.3 extension?\nUnforeseen + necessary\n+ fit, ≤30min}
+    FT_EXT -->|Yes| FDP_CMP
+    FT_EXT -->|No| FAIL_FT([❌ INVALID — §2.3])
+
+    %% ═══════════════════════════════════════
+    %% 5. FDP vs LIMIT
+    %% ═══════════════════════════════════════
+    FDP_CMP{5. Actual FDP\n≤14h?}
+    FDP_CMP -->|Yes| ODP
+    FDP_CMP -->|Exceeds by ≤1h| EXT{Extension §3.1?\nFCM discretion + fit\n+1h max}
+    FDP_CMP -->|Exceeds by >1h| FAIL_FDP([❌ INVALID — §6\nExceeds FDP limit])
+    EXT --> EXT_TWI{Extension must not go\npast evening twilight §3.2\nunless to complete\nlast daylight flight duties}
+    EXT_TWI -->|OK| ODP
+    EXT_TWI -->|Fails| FAIL_FDP
+
+    %% ═══════════════════════════════════════
+    %% 6. OFF-DUTY  §4
+    %% ═══════════════════════════════════════
+    ODP{6. Off-Duty §4}
+    ODP --> ODP_10{≥10h consecutive\noff-duty after FDP? §4.1}
+    ODP_10 -->|No| FAIL_ODP([❌ INVALID — §4.1])
+    ODP_10 -->|Yes| ODP_16{≥2 consecutive days\noff in any 384h\nperiod? §4.2}
+    ODP_16 -->|No| FAIL_ODP2([❌ INVALID — §4.2\n<2 consecutive days off in 16d])
+    ODP_16 -->|Yes| CUM
+
+    %% ═══════════════════════════════════════
+    %% 7. CUMULATIVE FLIGHT TIME  §5
+    %% ═══════════════════════════════════════
+    CUM{7. Cumulative Flight Time §5}
+    CUM --> CF384{≤100h in 384h? §5.1\nResets after 5d off §5.3}
+    CF384 -->|No| FAIL_CF1([❌ §5.1])
+    CF384 -->|Yes| CF_MUST{Mustering op with\n<500h PIC/PICUS?}
+    CF_MUST -->|Yes| CF_M30{≤120h in 30d? §5.2}
+    CF_MUST -->|No| CF365
+    CF_M30 -->|No| FAIL_CF2([❌ §5.2])
+    CF_M30 -->|Yes| CF365
+    CF365{≤1200h in 365d? §5.4\nResets after 28d off §5.5}
+    CF365 -->|No| FAIL_CF3([❌ §5.4])
+    CF365 -->|Yes| VALID([✅ DUTY IS VALID\nunder Appendix 5A])
+
+    %% ─── STYLING ───
+    classDef failNode fill:#fee2e2,stroke:#dc2626,color:#991b1b
+    classDef passNode fill:#d1fae5,stroke:#059669,color:#065f46
+    classDef decisionNode fill:#dbeafe,stroke:#2563eb,color:#1e40af
+    classDef limitNode fill:#fef3c7,stroke:#d97706,color:#92400e
+
+    class FAIL_SLP,FAIL_SLP2,FAIL_DL,FAIL_DL2,FAIL_FT,FAIL_FDP,FAIL_ODP,FAIL_ODP2,FAIL_CF1,FAIL_CF2,FAIL_CF3 failNode
+    class VALID passNode
+    class SLEEP,DAYLIGHT,FDP_LIM,FT_CHK,FDP_CMP,ODP,CUM decisionNode
+    class FDP14 limitNode

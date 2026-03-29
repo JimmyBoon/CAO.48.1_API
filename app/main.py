@@ -35,6 +35,8 @@ from app.models.sections import (
     SectionDetailResponse,
     TableOfContentsResponse,
 )
+from app.routes.limits import router as limits_router
+from app.routes.calculate import router as calculate_router
 
 # ─── Logging ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -46,41 +48,45 @@ logger = logging.getLogger(__name__)
 # ─── Appendix definitions ──────────────────────────────────────────────
 # Central registry of all appendices — status updated as features are built.
 APPENDICES = [
-    AppendixStatus(id="1", title="Basic Limits", status="planned"),
+    AppendixStatus(id="1", title="Basic Limits", status="available"),
     AppendixStatus(
-        id="2", title="Multi-Pilot Operations", status="planned"
+        id="2", title="Multi-Pilot Operations", status="available"
     ),
     AppendixStatus(
         id="3",
         title="Multi-Pilot Operations Except Complex",
-        status="planned",
+        status="available",
     ),
-    AppendixStatus(id="4", title="Any Operations", status="planned"),
-    AppendixStatus(id="4A", title="Balloon Operations", status="planned"),
+    AppendixStatus(id="4", title="Any Operations", status="available"),
+    AppendixStatus(id="4A", title="Balloon Operations", status="available"),
     AppendixStatus(
         id="4B",
         title="Medical Transport & Emergency Service Operations",
-        status="planned",
+        status="available",
     ),
     AppendixStatus(
         id="5",
         title="Aerial Work & Associated Flight Training",
-        status="planned",
+        status="available",
     ),
     AppendixStatus(
-        id="5A", title="Daylight Aerial Work", status="planned"
+        id="5A", title="Daylight Aerial Work", status="available"
     ),
-    AppendixStatus(id="6", title="Flight Training", status="planned"),
+    AppendixStatus(id="6", title="Flight Training", status="available"),
 ]
 
 # ─── Endpoint registry ─────────────────────────────────────────────────
 # Tracks which endpoints are live vs planned. Update as phases are built.
-AVAILABLE_ENDPOINTS = ["/health", "/sections", "/sections/{section_id}"]
-PLANNED_ENDPOINTS = [
+AVAILABLE_ENDPOINTS = [
+    "/health",
+    "/sections",
+    "/sections/{section_id}",
     "/limits/fdp-table/{appendix}",
     "/limits/cumulative/{appendix}",
     "/calculate/max-fdp",
     "/calculate/min-off-duty",
+]
+PLANNED_ENDPOINTS = [
     "/validate/fdp",
     "/validate/off-duty",
     "/validate/cumulative",
@@ -202,6 +208,10 @@ app.add_middleware(RapidAPIProxyMiddleware)
 # ─── API prefix router ─────────────────────────────────────────────────
 # All endpoints live under /api/v1/cao481
 API_PREFIX = "/api/v1/cao481"
+
+# ─── Mount Phase 2 routers ────────────────────────────────────────────
+app.include_router(limits_router, prefix=API_PREFIX)
+app.include_router(calculate_router, prefix=API_PREFIX)
 
 
 # ─── Health endpoint ───────────────────────────────────────────────────
