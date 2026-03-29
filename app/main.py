@@ -4,7 +4,7 @@ main.py — CAO 48.1 Compliance API entry point.
 A stateless REST API for validating flight crew duty periods against
 the Australian Civil Aviation Order 48.1 Instrument 2019.
 
-Phase 0–3: Health, regulatory content, FDP/cumulative limits, calculation, and FDP/off-duty validation.
+Phase 0–4: Health, regulatory content, FDP/cumulative limits, calculation, FDP/off-duty validation, cumulative limits, and sequence validation.
 
 Usage:
     # Local development
@@ -88,10 +88,10 @@ AVAILABLE_ENDPOINTS = [
     "/calculate/min-off-duty",
     "/validate/fdp",
     "/validate/off-duty",
-]
-PLANNED_ENDPOINTS = [
     "/validate/cumulative",
     "/validate/sequence",
+]
+PLANNED_ENDPOINTS = [
     "/validate/roster",
 ]
 

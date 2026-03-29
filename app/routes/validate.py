@@ -1,20 +1,26 @@
 """
 Route handlers for the /validate/* endpoints.
 
-POST /validate/fdp       — FDP validation
-POST /validate/off-duty  — Off-duty period validation
+POST /validate/fdp        — FDP validation
+POST /validate/off-duty   — Off-duty period validation
+POST /validate/cumulative — Rolling-window cumulative limit checks
+POST /validate/sequence   — Ordered FDP/ODP sequence validation
 """
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from app.engines.cumulative_validator import validate_cumulative
 from app.engines.fdp_validator import validate_fdp
 from app.engines.off_duty_validator import validate_off_duty
+from app.engines.sequence_validator import validate_sequence
 from app.models.validation import (
     CheckResult,
     ValidationResponse,
+    ValidateCumulativeRequest,
     ValidateFdpRequest,
     ValidateOffDutyRequest,
+    ValidateSequenceRequest,
     Violation,
 )
 
@@ -150,6 +156,107 @@ async def validate_off_duty_endpoint(
             following_includes_local_night=request.following_off_duty_includes_local_night,
             acclimatisation_state=request.acclimatisation_state,
             reduction_claimed=request.reduction_claimed,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "validation_error", "message": str(exc)},
+        )
+
+    return ValidationResponse(
+        valid=result["valid"],
+        appendix=result["appendix"],
+        violations=[Violation(**v) for v in result["violations"]],
+        checks=[CheckResult(**c) for c in result["checks"]],
+        warnings=result["warnings"],
+        calculation_notes=result["calculation_notes"],
+    )
+
+
+@router.post(
+    "/validate/cumulative",
+    response_model=ValidationResponse,
+    summary="Validate cumulative flight time and recovery limits",
+    description=(
+        "Validates rolling-window cumulative limits (flight time, duty time, "
+        "recovery blocks, minimum days off) for the specified appendix.\n\n"
+        "Accepts either a full FDP history log (preferred — the API computes "
+        "all windows) or pre-aggregated summary totals (accepted when a full "
+        "log is unavailable).\n\n"
+        "For Appendices 5 and 5A, a 5+ consecutive-day gap in the FDP log is "
+        "automatically detected and used to reset the flight time accumulation "
+        "counter."
+    ),
+    responses={
+        200: {
+            "description": (
+                "Validation completed. Inspect `valid` for pass/fail outcome."
+            ),
+        },
+        422: {"description": "Invalid request body."},
+    },
+)
+async def validate_cumulative_endpoint(
+    request: ValidateCumulativeRequest,
+) -> ValidationResponse:
+    try:
+        result = validate_cumulative(
+            appendix=request.appendix,
+            as_of_utc=request.as_of_utc,
+            fdp_log=request.fdp_log,
+            summary=request.summary,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": "validation_error", "message": str(exc)},
+        )
+
+    return ValidationResponse(
+        valid=result["valid"],
+        appendix=result["appendix"],
+        violations=[Violation(**v) for v in result["violations"]],
+        checks=[CheckResult(**c) for c in result["checks"]],
+        warnings=result["warnings"],
+        calculation_notes=result["calculation_notes"],
+    )
+
+
+@router.post(
+    "/validate/sequence",
+    response_model=ValidationResponse,
+    summary="Validate an ordered sequence of FDPs and off-duty periods",
+    description=(
+        "Validates a chronologically ordered sequence of FDP and off-duty "
+        "events as a complete roster window.\n\n"
+        "Checks performed:\n"
+        "- Each individual FDP (duration, flight time limits)\n"
+        "- Each off-duty period between FDPs (minimum ODP requirements)\n"
+        "- Consecutive WOCL infringement rule (§13.2): after 3 consecutive "
+        "WOCL infringements, the next WOCL-infringing FDP must be preceded "
+        "by an off-duty period that includes a local night\n"
+        "- Rolling cumulative limits (flight time, duty time, recovery) "
+        "evaluated over the full sequence\n\n"
+        "Each check result is prefixed with its event context "
+        "(e.g. `fdp1_fdp_within_limit`, `odp1_minimum_odp`, "
+        "`cumulative_flight_time_28d`)."
+    ),
+    responses={
+        200: {
+            "description": (
+                "Validation completed. Inspect `valid` for pass/fail outcome."
+            ),
+        },
+        422: {"description": "Invalid request body."},
+    },
+)
+async def validate_sequence_endpoint(
+    request: ValidateSequenceRequest,
+) -> ValidationResponse:
+    try:
+        result = validate_sequence(
+            appendix=request.appendix,
+            events=request.events,
         )
     except ValueError as exc:
         return JSONResponse(

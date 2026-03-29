@@ -1,13 +1,16 @@
 """
 Pydantic request and response models for the /validate/* endpoints.
 
-POST /validate/fdp       — FDP validation
-POST /validate/off-duty  — Off-duty period validation
+POST /validate/fdp        — FDP validation
+POST /validate/off-duty   — Off-duty period validation
+POST /validate/cumulative — Rolling-window cumulative limit checks
+POST /validate/sequence   — Ordered FDP/ODP sequence validation
 """
 
-from typing import Literal, Optional
+from datetime import datetime
+from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.calculation import (
     AcclimState,
@@ -253,6 +256,277 @@ class ValidateOffDutyRequest(BaseModel):
                         "was_extended": False,
                     },
                     "actual_off_duty_hours": 10.5,
+                }
+            ]
+        }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# POST /validate/cumulative
+# ═══════════════════════════════════════════════════════════════════════
+
+class FdpHistoryRecord(BaseModel):
+    """A single FDP entry in a pilot's history log."""
+
+    fdp_start_utc: datetime = Field(description="FDP start time (ISO 8601 UTC).")
+    fdp_end_utc: datetime = Field(description="FDP end time (ISO 8601 UTC).")
+    actual_flight_time_hours: float = Field(
+        ge=0,
+        description="Actual flight time within this FDP (hours).",
+    )
+    actual_duty_time_hours: float = Field(
+        ge=0,
+        description="Total duty time for this FDP including pre/post-flight duties (hours).",
+    )
+    local_time_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset of the local time zone at the crew base for this FDP. "
+            "Required for recovery block local-night detection. "
+            "If omitted, local-night checks are skipped with a data_unavailable note."
+        ),
+    )
+
+
+class CumulativeSummaryInput(BaseModel):
+    """
+    Pre-aggregated cumulative totals — accepted as a fallback when
+    a full FDP history log is not available.
+
+    Provide whichever totals are relevant to your appendix.
+    Window definitions:
+      168h = rolling 7-day window
+      336h = rolling 14-day window
+      28d  = rolling 28-day window
+      90d  = rolling 90-day window
+      365d = rolling 365-day window
+      384h = rolling 16-day window (Appendix 4A, 5A)
+    """
+
+    flight_time_168h_hours: Optional[float] = Field(
+        default=None, ge=0, description="Flight time in the previous 168h (Appendix 5)."
+    )
+    flight_time_28d_hours: Optional[float] = Field(
+        default=None, ge=0, description="Flight time in the previous 28 days."
+    )
+    flight_time_90d_hours: Optional[float] = Field(
+        default=None, ge=0, description="Flight time in the previous 90 days (Appendix 5)."
+    )
+    flight_time_365d_hours: Optional[float] = Field(
+        default=None, ge=0, description="Flight time in the previous 365 days."
+    )
+    flight_time_384h_hours: Optional[float] = Field(
+        default=None, ge=0, description="Flight time in the previous 384h (Appendix 5A)."
+    )
+    duty_time_168h_hours: Optional[float] = Field(
+        default=None, ge=0, description="Duty time in the previous 168h."
+    )
+    duty_time_336h_hours: Optional[float] = Field(
+        default=None, ge=0, description="Duty time in the previous 336h."
+    )
+    recovery_36h_block_in_168h: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True if a 36h+ off-duty block including 2 local nights has occurred "
+            "in the previous 168h. Required for Appendices 1–4, 4B, 6."
+        ),
+    )
+    recovery_36h_block_in_336h: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True if a 36h+ off-duty block including 2 local nights has occurred "
+            "in the previous 336h. Required for Appendices 4B, 5."
+        ),
+    )
+    recovery_72h_block_in_504h: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True if a 72h+ off-duty block including 3 local nights has occurred "
+            "in the previous 504h. Required for Appendices 4B, 5."
+        ),
+    )
+    days_off_in_28d: Optional[int] = Field(
+        default=None, ge=0,
+        description="Number of full days off in the previous 28 days. Required for Appendices 1–4, 6.",
+    )
+    days_off_in_384h: Optional[int] = Field(
+        default=None, ge=0,
+        description="Number of full days off in the previous 384h. Required for Appendices 4A, 5A.",
+    )
+
+
+class ValidateCumulativeRequest(BaseModel):
+    """Request body for POST /validate/cumulative."""
+
+    appendix: AppendixId = Field(description="Which appendix rules apply.")
+    as_of_utc: datetime = Field(
+        description=(
+            "The point in time to evaluate cumulative limits against — "
+            "normally the start of the next FDP. Rolling windows are "
+            "computed backwards from this timestamp."
+        )
+    )
+    fdp_log: Optional[list[FdpHistoryRecord]] = Field(
+        default=None,
+        description=(
+            "Ordered list of recent FDPs (chronological). "
+            "The API computes all rolling windows from this data. "
+            "Preferred over `summary` — provide at least 365 days of history "
+            "for full coverage."
+        ),
+    )
+    summary: Optional[CumulativeSummaryInput] = Field(
+        default=None,
+        description=(
+            "Pre-aggregated totals for each rolling window. "
+            "Used as a fallback when a full FDP log is not available. "
+            "Only fields relevant to your appendix need to be provided."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def require_log_or_summary(self) -> "ValidateCumulativeRequest":
+        if self.fdp_log is None and self.summary is None:
+            raise ValueError(
+                "At least one of 'fdp_log' or 'summary' must be provided."
+            )
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "appendix": "3",
+                    "as_of_utc": "2026-03-29T22:00:00Z",
+                    "fdp_log": [
+                        {
+                            "fdp_start_utc": "2026-03-05T22:00:00Z",
+                            "fdp_end_utc": "2026-03-06T08:00:00Z",
+                            "actual_flight_time_hours": 8.0,
+                            "actual_duty_time_hours": 10.0,
+                            "local_time_offset_hours": 8.0,
+                        },
+                        {
+                            "fdp_start_utc": "2026-03-07T22:00:00Z",
+                            "fdp_end_utc": "2026-03-08T08:00:00Z",
+                            "actual_flight_time_hours": 7.5,
+                            "actual_duty_time_hours": 9.5,
+                            "local_time_offset_hours": 8.0,
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# POST /validate/sequence
+# ═══════════════════════════════════════════════════════════════════════
+
+class SequenceFdpEvent(BaseModel):
+    """A single FDP within a duty sequence."""
+
+    event_type: Literal["fdp"] = "fdp"
+    fdp_start_utc: datetime = Field(description="FDP start time (ISO 8601 UTC).")
+    fdp_end_utc: datetime = Field(description="FDP end time (ISO 8601 UTC).")
+    actual_flight_time_hours: float = Field(
+        ge=0, description="Flight time within this FDP (hours)."
+    )
+    actual_duty_time_hours: float = Field(
+        ge=0, description="Total duty time including pre/post-flight (hours)."
+    )
+    local_time_offset_hours: float = Field(
+        description="UTC offset at the departure point (hours). Used to determine early-start status."
+    )
+    sectors: int = Field(ge=1, description="Number of sectors (flights) in this FDP.")
+    crosses_wocl: bool = Field(
+        default=False,
+        description=(
+            "True if this FDP includes any operation during the WOCL "
+            "(0200–0559 local time). Used to track consecutive WOCL infringements."
+        ),
+    )
+
+
+class SequenceOdpEvent(BaseModel):
+    """An off-duty period within a duty sequence."""
+
+    event_type: Literal["off_duty"] = "off_duty"
+    start_utc: datetime = Field(description="Start of off-duty period (ISO 8601 UTC).")
+    end_utc: datetime = Field(description="End of off-duty period (ISO 8601 UTC).")
+    duration_hours: float = Field(
+        ge=0, description="Duration of the off-duty period (hours)."
+    )
+    includes_local_night: bool = Field(
+        default=False,
+        description=(
+            "True if this off-duty period includes a local night "
+            "(a period of 8 consecutive hours including 0100–0559 local time). "
+            "Used for recovery block and WOCL-infringement reset checks."
+        ),
+    )
+    location: Location = Field(
+        default="away",
+        description="Whether the off-duty period is at home base or away.",
+    )
+
+
+SequenceEvent = Annotated[
+    Union[SequenceFdpEvent, SequenceOdpEvent],
+    Field(discriminator="event_type"),
+]
+
+
+class ValidateSequenceRequest(BaseModel):
+    """Request body for POST /validate/sequence."""
+
+    appendix: AppendixId = Field(description="Which appendix rules apply.")
+    events: list[SequenceEvent] = Field(
+        min_length=1,
+        description=(
+            "Ordered sequence of FDP and off-duty events (chronological). "
+            "Each event must have `event_type` set to either 'fdp' or 'off_duty'. "
+            "The sequence should cover the full roster window being validated."
+        ),
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "appendix": "3",
+                    "events": [
+                        {
+                            "event_type": "fdp",
+                            "fdp_start_utc": "2026-03-24T22:00:00Z",
+                            "fdp_end_utc": "2026-03-25T08:00:00Z",
+                            "actual_flight_time_hours": 7.5,
+                            "actual_duty_time_hours": 10.0,
+                            "local_time_offset_hours": 8.0,
+                            "sectors": 3,
+                            "crosses_wocl": False,
+                        },
+                        {
+                            "event_type": "off_duty",
+                            "start_utc": "2026-03-25T08:00:00Z",
+                            "end_utc": "2026-03-25T22:00:00Z",
+                            "duration_hours": 14.0,
+                            "includes_local_night": True,
+                            "location": "away",
+                        },
+                        {
+                            "event_type": "fdp",
+                            "fdp_start_utc": "2026-03-25T22:00:00Z",
+                            "fdp_end_utc": "2026-03-26T08:00:00Z",
+                            "actual_flight_time_hours": 8.0,
+                            "actual_duty_time_hours": 10.0,
+                            "local_time_offset_hours": 8.0,
+                            "sectors": 3,
+                            "crosses_wocl": False,
+                        },
+                    ],
                 }
             ]
         }
