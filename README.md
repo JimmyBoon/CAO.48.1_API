@@ -118,13 +118,14 @@ Configure tiers in the RapidAPI Monetisation tab.
 |--------|------|-------------|
 | POST | `/api/v1/cao481/validate/fdp` | Validate a single FDP against calculated limits |
 | POST | `/api/v1/cao481/validate/off-duty` | Validate an off-duty period against minimum requirements |
+| POST | `/api/v1/cao481/validate/cumulative` | Check rolling-window cumulative limits against a log or summary |
+| POST | `/api/v1/cao481/validate/sequence` | Validate a chronological FDP/ODP sequence including §13.2 WOCL and consecutive-start rules |
+| POST | `/api/v1/cao481/validate/roster` | Full roster validation — all FDPs, ODPs and rest days in one call |
 
-### Validation (Planned)
+### Guide
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/cao481/validate/cumulative` | Check rolling-window limits |
-| POST | `/api/v1/cao481/validate/sequence` | Validate duty sequence patterns |
-| POST | `/api/v1/cao481/validate/roster` | Full roster validation |
+| GET | `/api/v1/cao481/guide` | Structured usage guide for all endpoints — purpose, parameters, examples, common mistakes |
 
 ## Project Structure
 
@@ -140,12 +141,16 @@ cao481-api/
 │   │   ├── cao481.md          # Full CAO 48.1 legislation text
 │   │   ├── fdp_tables.py      # FDP lookup tables for all 9 appendices
 │   │   ├── cumulative_limits.py # Cumulative flight/duty time thresholds
-│   │   └── off_duty_rules.py  # Off-duty period rules per appendix
+│   │   ├── off_duty_rules.py  # Off-duty period rules per appendix
+│   │   └── guide.py           # /guide endpoint content
 │   ├── engines/
 │   │   ├── fdp_calculator.py  # Max FDP calculation logic
 │   │   ├── off_duty_calculator.py # Min off-duty calculation logic
 │   │   ├── fdp_validator.py   # FDP validation logic
-│   │   └── off_duty_validator.py  # Off-duty validation logic
+│   │   ├── off_duty_validator.py  # Off-duty validation logic
+│   │   ├── cumulative_validator.py # Rolling-window cumulative limits validator
+│   │   ├── sequence_validator.py  # Ordered FDP/ODP sequence validator
+│   │   └── roster_validator.py    # Full roster validation (Phase 5)
 │   ├── models/
 │   │   ├── health.py          # Health endpoint response models
 │   │   ├── sections.py        # Regulatory content response models
@@ -155,17 +160,24 @@ cao481-api/
 │   └── routes/
 │       ├── limits.py          # /limits/* route handlers
 │       ├── calculate.py       # /calculate/* route handlers
-│       └── validate.py        # /validate/* route handlers
+│       ├── validate.py        # /validate/* route handlers
+│       └── guide.py           # /guide route handler
 ├── tests/
 │   ├── test_health.py         # Health endpoint + middleware tests
 │   ├── test_sections.py       # Regulatory content tests
-│   ├── test_limits_endpoints.py      # Limits endpoint tests
-│   ├── test_fdp_calculator.py        # FDP calculation engine tests
-│   ├── test_off_duty_calculator.py   # Off-duty calculation engine tests
-│   ├── test_calculate_endpoints.py   # Calculation endpoint tests
-│   ├── test_fdp_validator.py         # FDP validation engine tests
-│   ├── test_off_duty_validator.py    # Off-duty validation engine tests
-│   └── test_validate_endpoints.py    # Validation endpoint tests
+│   ├── test_limits_endpoints.py        # Limits endpoint tests
+│   ├── test_fdp_calculator.py          # FDP calculation engine tests
+│   ├── test_off_duty_calculator.py     # Off-duty calculation engine tests
+│   ├── test_calculate_endpoints.py     # Calculation endpoint tests
+│   ├── test_fdp_validator.py           # FDP validation engine tests
+│   ├── test_off_duty_validator.py      # Off-duty validation engine tests
+│   ├── test_validate_endpoints.py      # Validation endpoint tests (Phase 3)
+│   ├── test_cumulative_validator.py    # Cumulative validation engine tests
+│   ├── test_sequence_validator.py      # Sequence validation engine tests
+│   ├── test_validate_phase4_endpoints.py # Phase 4 endpoint tests
+│   ├── test_roster_validator.py        # Roster validation engine tests (Phase 5)
+│   ├── test_validate_phase5_endpoints.py # Phase 5 endpoint tests
+│   └── test_guide_endpoint.py          # Guide endpoint tests (Phase 6)
 ├── src/
 │   └── index.js               # Cloudflare Worker proxy
 ├── .env.example
@@ -185,9 +197,9 @@ cao481-api/
 | **1** | Regulatory content endpoints + legislation parser | ✅ Complete |
 | **2** | FDP tables, cumulative limits, max-FDP & min-off-duty calculators | ✅ Complete |
 | **3** | FDP and off-duty validation | ✅ Complete |
-| **4** | Cumulative and sequence validation | 🔲 Planned |
-| **5** | Full roster validation | 🔲 Planned |
-| **6** | MCP server wrapper | 🔲 Planned |
+| **4** | Cumulative and sequence validation | ✅ Complete |
+| **5** | Full roster validation | ✅ Complete |
+| **6** | Self-describing `/guide` endpoint for LLM and integration consumers | ✅ Complete |
 
 ## Disclaimer
 

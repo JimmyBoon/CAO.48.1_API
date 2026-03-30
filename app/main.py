@@ -4,7 +4,7 @@ main.py — CAO 48.1 Compliance API entry point.
 A stateless REST API for validating flight crew duty periods against
 the Australian Civil Aviation Order 48.1 Instrument 2019.
 
-Phase 0–3: Health, regulatory content, FDP/cumulative limits, calculation, and FDP/off-duty validation.
+Phase 0–6: Health, regulatory content, FDP/cumulative limits, calculation, FDP/off-duty validation, cumulative limits, sequence validation, full roster validation, and the /guide self-documentation endpoint.
 
 Usage:
     # Local development
@@ -38,6 +38,7 @@ from app.models.sections import (
 from app.routes.limits import router as limits_router
 from app.routes.calculate import router as calculate_router
 from app.routes.validate import router as validate_router
+from app.routes.guide import router as guide_router
 
 # ─── Logging ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -88,12 +89,12 @@ AVAILABLE_ENDPOINTS = [
     "/calculate/min-off-duty",
     "/validate/fdp",
     "/validate/off-duty",
-]
-PLANNED_ENDPOINTS = [
     "/validate/cumulative",
     "/validate/sequence",
     "/validate/roster",
+    "/guide",
 ]
+PLANNED_ENDPOINTS: list[str] = []
 
 # ─── Lifespan ──────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -214,6 +215,7 @@ API_PREFIX = "/api/v1/cao481"
 app.include_router(limits_router, prefix=API_PREFIX)
 app.include_router(calculate_router, prefix=API_PREFIX)
 app.include_router(validate_router, prefix=API_PREFIX)
+app.include_router(guide_router, prefix=API_PREFIX)
 
 
 # ─── Health endpoint ───────────────────────────────────────────────────

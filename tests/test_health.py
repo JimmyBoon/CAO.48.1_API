@@ -104,15 +104,15 @@ class TestHealthEndpoint:
         assert "/health" in endpoints["available"]
 
     @pytest.mark.anyio
-    async def test_health_planned_endpoints_not_empty(self, api_prefix: str):
-        """There should be planned endpoints listed for future phases."""
+    async def test_health_planned_endpoints_empty(self, api_prefix: str):
+        """All planned endpoints are now implemented — planned list should be empty."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(f"{api_prefix}/health")
 
         planned = response.json()["endpoints"]["planned"]
-        assert len(planned) > 0
-        assert "/validate/roster" in planned
+        assert len(planned) == 0
+        assert "/validate/roster" not in planned
 
 
 # ─── RapidAPI Middleware Tests ─────────────────────────────────────────
