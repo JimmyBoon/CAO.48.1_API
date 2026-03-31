@@ -38,40 +38,9 @@ def calculate_min_off_duty(
 
     # ─── Total duty calculation ───────────────────────────────────
     total_duty = preceding_fdp_duration_hours + post_fdp_duty_hours
-    exceeds_threshold = total_duty > config.threshold_hours
-    notes.append(
-        f"FDP + post-FDP duty = {total_duty}h "
-        f"({'>' if exceeds_threshold else '<='}{config.threshold_hours}h)"
-    )
+    notes.append(f"FDP + post-FDP duty = {total_duty}h")
 
-    # ─── Calculate base minimum by type ───────────────────────────
-    if config.calc_type == "simple_fixed":
-        return _calc_simple_fixed(config, total_duty, notes)
-
-    elif config.calc_type == "home_away":
-        base, clause = _calc_home_away(
-            config, total_duty, exceeds_threshold, location, notes,
-        )
-
-    elif config.calc_type == "home_away_displacement":
-        base, clause = _calc_home_away_displacement(
-            config, total_duty, exceeds_threshold, location,
-            acclimatisation_state, notes,
-        )
-
-    elif config.calc_type == "night_branching":
-        base, clause = _calc_night_branching(
-            config, total_duty, exceeds_threshold,
-            was_extended, extension_hours, notes,
-        )
-
-    elif config.calc_type == "formula":
-        base, clause = _calc_formula(config, total_duty, exceeds_threshold, notes)
-
-    else:
-        raise ValueError(f"Unknown calc_type: {config.calc_type}")
-
-    # ─── Apply split duty credit ──────────────────────────────────
+    # ─── Apply split duty credit (before base calc) ───────────────
     split_credit = 0.0
     split_credit_clause = None
     effective_duration = total_duty
@@ -82,6 +51,39 @@ def calculate_min_off_duty(
             split_duty_overlaps_night, notes,
         )
         effective_duration = total_duty - split_credit
+
+    exceeds_threshold = effective_duration > config.threshold_hours
+    notes.append(
+        f"Effective duration = {effective_duration}h "
+        f"({'>' if exceeds_threshold else '<='}{config.threshold_hours}h)"
+    )
+
+    # ─── Calculate base minimum by type ───────────────────────────
+    if config.calc_type == "simple_fixed":
+        return _calc_simple_fixed(config, total_duty, notes)
+
+    elif config.calc_type == "home_away":
+        base, clause = _calc_home_away(
+            config, effective_duration, exceeds_threshold, location, notes,
+        )
+
+    elif config.calc_type == "home_away_displacement":
+        base, clause = _calc_home_away_displacement(
+            config, effective_duration, exceeds_threshold, location,
+            acclimatisation_state, notes,
+        )
+
+    elif config.calc_type == "night_branching":
+        base, clause = _calc_night_branching(
+            config, effective_duration, exceeds_threshold,
+            was_extended, extension_hours, notes,
+        )
+
+    elif config.calc_type == "formula":
+        base, clause = _calc_formula(config, effective_duration, exceeds_threshold, notes)
+
+    else:
+        raise ValueError(f"Unknown calc_type: {config.calc_type}")
 
     # ─── Check reduction eligibility ──────────────────────────────
     reduction = _check_reduction(
