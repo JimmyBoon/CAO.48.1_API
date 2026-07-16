@@ -19,9 +19,9 @@
 
 | # | Test | Method | Endpoint | Expected | Done |
 |---|------|--------|----------|----------|------|
-| T001 | Health check returns 200 with correct structure | GET | `/health` | 200 — Response has `status: "healthy"`, `version`, `api`, `legislation`, `supported_appendices`, `endpoints` | [ ] |
-| T002 | Health check lists all 9 appendices | GET | `/health` | `supported_appendices` has 9 entries: 1, 2, 3, 4, 4A, 4B, 5, 5A, 6 | [ ] |
-| T003 | Health check lists all available endpoints | GET | `/health` | `endpoints.available` includes `/health`, `/sections`, `/calculate/max-fdp`, `/validate/fdp`, `/validate/off-duty`, `/validate/cumulative`, `/validate/sequence`, `/validate/roster`, `/guide` | [ ] |
+| T001 | Health check returns 200 with correct structure | GET | `/health` | 200 — Response has `status: "healthy"`, `version`, `api`, `legislation`, `supported_appendices`, `endpoints` | [x] |
+| T002 | Health check lists all 9 appendices | GET | `/health` | `supported_appendices` has 9 entries: 1, 2, 3, 4, 4A, 4B, 5, 5A, 6 | [x] |
+| T003 | Health check lists all available endpoints | GET | `/health` | `endpoints.available` includes `/health`, `/sections`, `/calculate/max-fdp`, `/validate/fdp`, `/validate/off-duty`, `/validate/cumulative`, `/validate/sequence`, `/validate/roster`, `/guide` | [x] |
 
 ---
 
