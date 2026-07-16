@@ -1,0 +1,1205 @@
+{
+  "info": {
+    "name": "CAO 48.1 API — Manual Test Suite",
+    "description": "Comprehensive manual test collection for CAO 48.1 Compliance API (~100 tests covering all endpoints)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://cao481-api.jwboon.workers.dev/api/v1/cao481",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 — Health & Discovery",
+      "item": [
+        {
+          "name": "T001 — Health check returns 200 with correct structure",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "header": []
+          }
+        },
+        {
+          "name": "T002 — Health check lists all 9 appendices",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "header": []
+          }
+        },
+        {
+          "name": "T003 — Health check lists all available endpoints",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 — Sections",
+      "item": [
+        {
+          "name": "T004 — GET /sections returns table of contents",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections",
+            "header": []
+          }
+        },
+        {
+          "name": "T005 — GET /sections/{PART 1} returns part group",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/PART 1",
+            "header": []
+          }
+        },
+        {
+          "name": "T006 — GET /sections/{APPENDIX 3} returns appendix group",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/APPENDIX 3",
+            "header": []
+          }
+        },
+        {
+          "name": "T007 — GET /sections/{APPENDIX 3.2} returns specific section",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/APPENDIX 3.2",
+            "header": []
+          }
+        },
+        {
+          "name": "T008 — GET /sections/{6} returns Definitions section",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/6",
+            "header": []
+          }
+        },
+        {
+          "name": "T009 — GET /sections/{NONEXISTENT} returns 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/NONEXISTENT",
+            "header": []
+          }
+        },
+        {
+          "name": "T010 — GET /sections/{APPENDIX 99} returns 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sections/APPENDIX 99",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — Limits: FDP Tables",
+      "item": [
+        {
+          "name": "T011 — FDP table Appendix 1 (Basic Limits)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/1",
+            "header": []
+          }
+        },
+        {
+          "name": "T012 — FDP table Appendix 2 (Multi-Pilot)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/2",
+            "header": []
+          }
+        },
+        {
+          "name": "T013 — FDP table Appendix 3 (Multi-Pilot Except Complex)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/3",
+            "header": []
+          }
+        },
+        {
+          "name": "T014 — FDP table Appendix 4 (Any Operations)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/4",
+            "header": []
+          }
+        },
+        {
+          "name": "T015 — FDP table Appendix 4A (Balloon)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/4A",
+            "header": []
+          }
+        },
+        {
+          "name": "T016 — FDP table Appendix 4B (Medical Transport)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/4B",
+            "header": []
+          }
+        },
+        {
+          "name": "T017 — FDP table Appendix 5 (Aerial Work)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/5",
+            "header": []
+          }
+        },
+        {
+          "name": "T018 — FDP table Appendix 5A (Daylight Aerial Work)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/5A",
+            "header": []
+          }
+        },
+        {
+          "name": "T019 — FDP table Appendix 6 (Flight Training)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/6",
+            "header": []
+          }
+        },
+        {
+          "name": "T020 — FDP table invalid appendix 99 returns 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/fdp-table/99",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 — Limits: Cumulative",
+      "item": [
+        {
+          "name": "T021 — Cumulative limits Appendix 1",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/1",
+            "header": []
+          }
+        },
+        {
+          "name": "T022 — Cumulative limits Appendix 3",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/3",
+            "header": []
+          }
+        },
+        {
+          "name": "T023 — Cumulative limits Appendix 4A (Balloon — different structure)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/4A",
+            "header": []
+          }
+        },
+        {
+          "name": "T024 — Cumulative limits Appendix 5 (Aerial Work)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/5",
+            "header": []
+          }
+        },
+        {
+          "name": "T025 — Cumulative limits Appendix 5A",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/5A",
+            "header": []
+          }
+        },
+        {
+          "name": "T026 — Cumulative limits invalid appendix returns 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/limits/cumulative/INVALID",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Calculate: Max FDP",
+      "item": [
+        {
+          "name": "T027 — Max FDP Appendix 1 basic (0700 start, 3 sectors)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T028 — Max FDP Appendix 1 early morning (0500 start, 4 sectors)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T19:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 4\n}"
+            }
+          }
+        },
+        {
+          "name": "T029 — Max FDP Appendix 1 night band (0000-0459 start, 1 sector)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T16:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "T030 — Max FDP Appendix 1 with 8+ sectors",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 9\n}"
+            }
+          }
+        },
+        {
+          "name": "T031 — Max FDP Appendix 3 with split duty (sleeping, 4h rest)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"split_duty\": {\n    \"rest_start_utc\": \"2026-03-29T04:00:00Z\",\n    \"rest_end_utc\": \"2026-03-29T08:00:00Z\",\n    \"accommodation\": \"sleeping\",\n    \"duration_hours\": 4.0,\n    \"overlaps_2300_0529\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T032 — Max FDP Appendix 3 with split duty (resting accommodation)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"split_duty\": {\n    \"rest_start_utc\": \"2026-03-29T04:00:00Z\",\n    \"rest_end_utc\": \"2026-03-29T07:00:00Z\",\n    \"accommodation\": \"resting\",\n    \"duration_hours\": 3.0,\n    \"overlaps_2300_0529\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T033 — Max FDP Appendix 2 acclimatised crew (3 sectors)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"2\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3,\n  \"acclimatisation\": {\n    \"state\": \"acclimatised\",\n    \"acclimatised_time_offset_hours\": 10\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T034 — Max FDP Appendix 2 unknown acclimatisation",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"2\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3,\n  \"acclimatisation\": {\n    \"state\": \"unknown\"\n  },\n  \"preceding_off_duty_hours\": 14.0\n}"
+            }
+          }
+        },
+        {
+          "name": "T035 — Max FDP Appendix 2 augmented crew (1 additional FCM, class 1)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"2\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3,\n  \"acclimatisation\": {\n    \"state\": \"acclimatised\",\n    \"acclimatised_time_offset_hours\": 10\n  },\n  \"augmented_crew\": {\n    \"additional_fcms\": 1,\n    \"rest_facility_class\": \"class_1\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T036 — Max FDP Appendix 2 augmented crew (2 additional FCMs, class 2)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"2\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3,\n  \"acclimatisation\": {\n    \"state\": \"acclimatised\",\n    \"acclimatised_time_offset_hours\": 10\n  },\n  \"augmented_crew\": {\n    \"additional_fcms\": 2,\n    \"rest_facility_class\": \"class_2\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T037 — Max FDP Appendix 4 (Any Operations, 2 sectors)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"4\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "T038 — Max FDP Appendix 4A (Balloon)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"4A\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "T039 — Max FDP Appendix 4B (Medical Transport, single pilot)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"4B\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 2,\n  \"single_pilot\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T040 — Max FDP Appendix 5 (Aerial Work, single pilot)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"5\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 1,\n  \"single_pilot\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T041 — Max FDP Appendix 5A (Daylight Aerial Work)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"5A\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "T042 — Max FDP Appendix 6 (Flight Training)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"6\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T043 — Max FDP with consecutive early starts reduction",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"consecutive_early_starts\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T044 — Max FDP with consecutive WOCL infringements",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T16:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 2,\n  \"consecutive_wocl_infringements\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T045 — Max FDP missing required fields returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "T046 — Max FDP invalid appendix returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"99\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T047 — Max FDP sectors = 0 returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 0\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 — Calculate: Min Off-Duty",
+      "item": [
+        {
+          "name": "T048 — Min off-duty Appendix 3 basic (away base)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.5,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T049 — Min off-duty Appendix 3 home base",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"home_base\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"home_base\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T050 — Min off-duty with FDP+post-duty exceeding 12h",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T20:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 12.5,\n    \"post_fdp_duty_hours\": 0.5,\n    \"location\": \"away\",\n    \"was_extended\": true,\n    \"extension_hours\": 1.0\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T051 — Min off-duty with reduction (prior ODP >=12h with local night)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"preceding_off_duty\": {\n    \"duration_hours\": 13.0,\n    \"included_local_night\": true\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T052 — Min off-duty with split duty credit",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T10:00:00Z\",\n    \"duration_hours\": 12.0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"split_duty\": {\n      \"rest_start_utc\": \"2026-03-29T04:00:00Z\",\n      \"rest_end_utc\": \"2026-03-29T08:00:00Z\",\n      \"accommodation\": \"sleeping\",\n      \"duration_hours\": 4.0\n    },\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T053 — Min off-duty Appendix 1",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T06:00:00Z\",\n    \"duration_hours\": 8.0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"home_base\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"home_base\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T054 — Min off-duty Appendix 5 (Aerial Work)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"5\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:00:00Z\",\n    \"duration_hours\": 10.0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T055 — Min off-duty missing required fields returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 — Validate: FDP",
+      "item": [
+        {
+          "name": "T056 — Validate FDP within limit (Appendix 3, 12h FDP)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T10:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 9.5\n}"
+            }
+          }
+        },
+        {
+          "name": "T057 — Validate FDP exceeds limit (violation expected)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T14:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 12.0\n}"
+            }
+          }
+        },
+        {
+          "name": "T058 — Validate FDP flight time exceeds per-FDP limit",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T10:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 11.0\n}"
+            }
+          }
+        },
+        {
+          "name": "T059 — Validate FDP with unforeseen extension (valid)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T11:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 10.0,\n  \"extension\": {\n    \"type\": \"unforeseen\",\n    \"hours_used\": 1.0,\n    \"captains_authority\": true\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T060 — Validate FDP extension exceeds max",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T13:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 10.0,\n  \"extension\": {\n    \"type\": \"unforeseen\",\n    \"hours_used\": 3.0,\n    \"captains_authority\": true\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T061 — Validate FDP Appendix 1 (Basic Limits)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T06:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 2,\n  \"actual_flight_time_hours\": 7.0\n}"
+            }
+          }
+        },
+        {
+          "name": "T062 — Validate FDP Appendix 2 with augmented crew",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"2\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T10:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 10.0,\n  \"acclimatisation\": {\n    \"state\": \"acclimatised\",\n    \"acclimatised_time_offset_hours\": 10\n  },\n  \"augmented_crew\": {\n    \"additional_fcms\": 1,\n    \"rest_facility_class\": \"class_1\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T063 — Validate FDP Appendix 4B (Medical Transport)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"4B\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T06:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 2,\n  \"single_pilot\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T064 — Validate FDP with split duty (within post-split cap)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T13:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3,\n  \"actual_flight_time_hours\": 8.0,\n  \"split_duty\": {\n    \"rest_start_utc\": \"2026-03-29T04:00:00Z\",\n    \"rest_end_utc\": \"2026-03-29T08:00:00Z\",\n    \"accommodation\": \"sleeping\",\n    \"duration_hours\": 4.0,\n    \"overlaps_2300_0529\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T065 — Validate FDP missing required fields returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T066 — Validate FDP empty body returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 — Validate: Off-Duty",
+      "item": [
+        {
+          "name": "T067 — Off-duty valid (10.5h, min is 10h)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"actual_off_duty_hours\": 10.5,\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T068 — Off-duty violation (too short)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"actual_off_duty_hours\": 7.0,\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T069 — Off-duty with reduction claimed",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T08:30:00Z\",\n    \"duration_hours\": 10.5,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"actual_off_duty_hours\": 9.5,\n  \"reduction_claimed\": true,\n  \"preceding_off_duty\": {\n    \"duration_hours\": 13.0,\n    \"included_local_night\": true\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T070 — Off-duty after extended FDP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T11:00:00Z\",\n    \"duration_hours\": 13.0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": true,\n    \"extension_hours\": 1.0\n  },\n  \"actual_off_duty_hours\": 14.0,\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T071 — Off-duty Appendix 1 basic",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-29T06:00:00Z\",\n    \"duration_hours\": 8.0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"home_base\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"actual_off_duty_hours\": 12.0,\n  \"following_off_duty_location\": \"home_base\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T072 — Off-duty missing required fields returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 — Validate: Cumulative",
+      "item": [
+        {
+          "name": "T073 — Cumulative validation with fdp_log (within limits)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"fdp_log\": [\n    {\n      \"fdp_start_utc\": \"2026-03-05T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-06T08:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0\n    },\n    {\n      \"fdp_start_utc\": \"2026-03-07T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-08T08:00:00Z\",\n      \"actual_flight_time_hours\": 7.5,\n      \"actual_duty_time_hours\": 9.5,\n      \"local_time_offset_hours\": 8.0\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T074 — Cumulative validation with summary (within limits)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 75.0,\n    \"flight_time_365d_hours\": 800.0,\n    \"duty_time_168h_hours\": 55.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T075 — Cumulative violation: flight time 28d exceeds 100h",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 105.0,\n    \"flight_time_365d_hours\": 800.0,\n    \"duty_time_168h_hours\": 55.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T076 — Cumulative violation: flight time 365d exceeds 1000h",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 80.0,\n    \"flight_time_365d_hours\": 1050.0,\n    \"duty_time_168h_hours\": 55.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T077 — Cumulative violation: duty time 168h exceeds 60h",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 80.0,\n    \"flight_time_365d_hours\": 800.0,\n    \"duty_time_168h_hours\": 65.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T078 — Cumulative violation: no recovery block in 168h",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 80.0,\n    \"flight_time_365d_hours\": 800.0,\n    \"duty_time_168h_hours\": 55.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": false,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T079 — Cumulative violation: insufficient days off in 28d",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 80.0,\n    \"flight_time_365d_hours\": 800.0,\n    \"duty_time_168h_hours\": 55.0,\n    \"duty_time_336h_hours\": 95.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 4\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T080 — Cumulative Appendix 4A (Balloon — different limits)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"4A\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\",\n  \"summary\": {\n    \"flight_time_28d_hours\": 40.0,\n    \"duty_time_168h_hours\": 40.0,\n    \"duty_time_336h_hours\": 80.0\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T081 — Cumulative missing both fdp_log and summary returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/cumulative",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"as_of_utc\": \"2026-03-29T22:00:00Z\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 — Validate: Sequence",
+      "item": [
+        {
+          "name": "T082 — Valid 2-FDP sequence with adequate off-duty",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T08:00:00Z\",\n      \"actual_flight_time_hours\": 7.5,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T08:00:00Z\",\n      \"end_utc\": \"2026-03-25T22:00:00Z\",\n      \"duration_hours\": 14.0,\n      \"includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-25T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-26T08:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T083 — Sequence with insufficient off-duty gap",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T08:00:00Z\",\n      \"actual_flight_time_hours\": 7.5,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T08:00:00Z\",\n      \"end_utc\": \"2026-03-25T15:00:00Z\",\n      \"duration_hours\": 7.0,\n      \"includes_local_night\": false,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-25T15:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-26T01:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T084 — Sequence with consecutive WOCL crossings",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T16:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T02:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": true\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T02:00:00Z\",\n      \"end_utc\": \"2026-03-25T16:00:00Z\",\n      \"duration_hours\": 14.0,\n      \"includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-25T16:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-26T02:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": true\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-26T02:00:00Z\",\n      \"end_utc\": \"2026-03-26T16:00:00Z\",\n      \"duration_hours\": 14.0,\n      \"includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-26T16:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-27T02:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": true\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T085 — Sequence single FDP only",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T08:00:00Z\",\n      \"actual_flight_time_hours\": 7.5,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T086 — Sequence with consecutive early starts",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T21:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T06:00:00Z\",\n      \"actual_flight_time_hours\": 7.0,\n      \"actual_duty_time_hours\": 9.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T06:00:00Z\",\n      \"end_utc\": \"2026-03-25T21:00:00Z\",\n      \"duration_hours\": 15.0,\n      \"includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-25T21:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-26T06:00:00Z\",\n      \"actual_flight_time_hours\": 7.0,\n      \"actual_duty_time_hours\": 9.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-26T06:00:00Z\",\n      \"end_utc\": \"2026-03-26T21:00:00Z\",\n      \"duration_hours\": 15.0,\n      \"includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-26T21:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-27T06:00:00Z\",\n      \"actual_flight_time_hours\": 7.0,\n      \"actual_duty_time_hours\": 9.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": false\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T087 — Sequence empty events returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/sequence",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"events\": []\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 — Validate: Roster",
+      "item": [
+        {
+          "name": "T088 — Valid roster (2 FDPs, 1 ODP, 1 rest day)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-28T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T08:00:00Z\",\n      \"actual_flight_time_hours\": 7.5,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T08:00:00Z\",\n      \"end_utc\": \"2026-03-25T22:00:00Z\",\n      \"duration_hours\": 14.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"away\"\n    },\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-25T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-26T08:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-26T08:00:00Z\",\n      \"end_utc\": \"2026-03-27T00:00:00Z\",\n      \"duration_hours\": 16.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"home_base\"\n    },\n    {\n      \"event_type\": \"rest_day\",\n      \"start_utc\": \"2026-03-27T00:00:00Z\",\n      \"end_utc\": \"2026-03-28T00:00:00Z\",\n      \"count\": 1,\n      \"includes_local_night\": true\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T089 — Roster with FDP violation (FDP too long)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T14:00:00Z\",\n      \"actual_flight_time_hours\": 12.0,\n      \"actual_duty_time_hours\": 16.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T14:00:00Z\",\n      \"end_utc\": \"2026-03-26T22:00:00Z\",\n      \"duration_hours\": 32.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"away\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T090 — Roster with prior_summary for cumulative checks",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T08:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T08:00:00Z\",\n      \"end_utc\": \"2026-03-27T00:00:00Z\",\n      \"duration_hours\": 40.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"home_base\"\n    }\n  ],\n  \"prior_summary\": {\n    \"flight_time_28d_hours\": 90.0,\n    \"flight_time_365d_hours\": 900.0,\n    \"duty_time_168h_hours\": 50.0,\n    \"duty_time_336h_hours\": 85.0,\n    \"recovery_36h_block_in_168h\": true,\n    \"days_off_in_28d\": 7\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "T091 — Roster with extension on FDP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T11:00:00Z\",\n      \"actual_flight_time_hours\": 10.0,\n      \"actual_duty_time_hours\": 13.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false,\n      \"extension\": {\n        \"type\": \"unforeseen\",\n        \"hours_used\": 1.0,\n        \"captains_authority\": true\n      }\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T11:00:00Z\",\n      \"end_utc\": \"2026-03-27T00:00:00Z\",\n      \"duration_hours\": 37.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"home_base\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T092 — Roster with split duty FDP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T22:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T12:00:00Z\",\n      \"actual_flight_time_hours\": 8.0,\n      \"actual_duty_time_hours\": 14.0,\n      \"local_time_offset_hours\": 8.0,\n      \"sectors\": 3,\n      \"crosses_wocl\": false,\n      \"split_duty\": {\n        \"rest_start_utc\": \"2026-03-25T04:00:00Z\",\n        \"rest_end_utc\": \"2026-03-25T08:00:00Z\",\n        \"accommodation\": \"sleeping\",\n        \"duration_hours\": 4.0,\n        \"overlaps_2300_0529\": false\n      }\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T12:00:00Z\",\n      \"end_utc\": \"2026-03-27T00:00:00Z\",\n      \"duration_hours\": 36.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"home_base\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T093 — Roster Appendix 1 (Basic Limits)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"1\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": [\n    {\n      \"event_type\": \"fdp\",\n      \"fdp_start_utc\": \"2026-03-24T21:00:00Z\",\n      \"fdp_end_utc\": \"2026-03-25T07:00:00Z\",\n      \"actual_flight_time_hours\": 7.0,\n      \"actual_duty_time_hours\": 10.0,\n      \"local_time_offset_hours\": 10.0,\n      \"sectors\": 2,\n      \"crosses_wocl\": false\n    },\n    {\n      \"event_type\": \"off_duty\",\n      \"start_utc\": \"2026-03-25T07:00:00Z\",\n      \"end_utc\": \"2026-03-27T00:00:00Z\",\n      \"duration_hours\": 41.0,\n      \"includes_local_night\": true,\n      \"following_includes_local_night\": true,\n      \"location\": \"home_base\"\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "T094 — Roster missing required fields returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "T095 — Roster empty events returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/roster",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"roster_start_utc\": \"2026-03-24T00:00:00Z\",\n  \"roster_end_utc\": \"2026-03-27T00:00:00Z\",\n  \"events\": []\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 — Guide",
+      "item": [
+        {
+          "name": "T096 — Guide endpoint returns 200 with content",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/guide",
+            "header": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 — Error Handling & Edge Cases",
+      "item": [
+        {
+          "name": "T097 — Non-existent endpoint returns 404",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/nonexistent",
+            "header": []
+          }
+        },
+        {
+          "name": "T098 — POST to GET-only endpoint returns 405",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/health",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          }
+        },
+        {
+          "name": "T099 — Invalid JSON body returns 422",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "not valid json"
+            }
+          }
+        },
+        {
+          "name": "T100 — Calculate max-fdp with negative local offset",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/max-fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-28T22:00:00Z\",\n  \"local_time_offset_hours\": -5,\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T101 — Validate FDP with fdp_end before fdp_start",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"fdp_start_utc\": \"2026-03-29T10:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-28T22:00:00Z\",\n  \"local_time_offset_hours\": 8,\n  \"sectors\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "T102 — Calculate min-off-duty with zero duration FDP",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/calculate/min-off-duty",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"3\",\n  \"preceding_fdp\": {\n    \"start_utc\": \"2026-03-28T22:00:00Z\",\n    \"end_utc\": \"2026-03-28T22:00:00Z\",\n    \"duration_hours\": 0,\n    \"post_fdp_duty_hours\": 0.0,\n    \"location\": \"away\",\n    \"was_extended\": false,\n    \"extension_hours\": 0.0\n  },\n  \"following_off_duty_location\": \"away\",\n  \"following_off_duty_includes_local_night\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "T103 — Validate FDP Appendix 5 multi-pilot crew config",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/validate/fdp",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appendix\": \"5\",\n  \"fdp_start_utc\": \"2026-03-28T21:00:00Z\",\n  \"fdp_end_utc\": \"2026-03-29T06:00:00Z\",\n  \"local_time_offset_hours\": 10,\n  \"sectors\": 2,\n  \"single_pilot\": false\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
