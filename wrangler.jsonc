@@ -29,7 +29,10 @@
     {
       "class_name": "CAO481Container",
       "image": "./Dockerfile",
-      "max_instances": 3
+      // Headroom for POOL_SIZE=2 steady-state PLUS a version-bump transition
+      // (old + new instances briefly co-exist). 5 avoids "max instances
+      // exceeded" errors for live RapidAPI traffic during a rollover.
+      "max_instances": 5
     }
   ],
 

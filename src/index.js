@@ -34,13 +34,36 @@ export class CAO481Container extends Container {
   // Adjust upward if cold starts become an issue.
   sleepAfter = "10m";
 
-  // Environment variables injected into the container.
-  // RAPIDAPI_PROXY_SECRET should be set as a Wrangler secret
-  // rather than hardcoded here.
-  envVars = {
-    ENVIRONMENT: "development",
-    LOG_LEVEL: "info",
-  };
+  /**
+   * Wire environment variables into the container at construction time.
+   *
+   * `envVars` is set here (rather than as a static class field) so we can
+   * pull RAPIDAPI_PROXY_SECRET off the Durable Object's bindings — it is a
+   * Wrangler secret bound to the Worker/DO, set via:
+   *   npx wrangler secret put RAPIDAPI_PROXY_SECRET
+   *
+   * Passing it through is REQUIRED in production: the FastAPI middleware
+   * fails closed (HTTP 500) when ENVIRONMENT=production but no secret is
+   * present, so the flag and the secret must travel together.
+   *
+   * @param {DurableObjectState} ctx - Durable Object execution context.
+   * @param {Object} env - Worker/DO bindings, including the secret.
+   */
+  constructor(ctx, env) {
+    super(ctx, env);
+
+    this.envVars = {
+      // Production mode activates the RapidAPI proxy-secret check in the
+      // FastAPI middleware. In "development" that check is skipped entirely,
+      // which would leave the origin open.
+      ENVIRONMENT: "production",
+      LOG_LEVEL: "info",
+      // The shared secret RapidAPI stamps on every request as the
+      // X-RapidAPI-Proxy-Secret header. Empty string if unset — which makes
+      // the middleware refuse all traffic rather than admit everyone.
+      RAPIDAPI_PROXY_SECRET: env.RAPIDAPI_PROXY_SECRET ?? "",
+    };
+  }
 
   // ─── Lifecycle hooks ────────────────────────────────────────────────
 
@@ -69,7 +92,11 @@ export class CAO481Container extends Container {
  */
 function getRandomInstance(binding, poolSize) {
   const index = Math.floor(Math.random() * poolSize);
-  const id = binding.idFromName(`cao481-v7-${index}`);
+  // Bump this version suffix (v7 → v8 → …) whenever the container's env vars
+  // change. Container env is only read on a COLD start, so reusing the same
+  // instance name keeps a warm container running its old env after a deploy.
+  // A new name forces brand-new instances that pick up the current envVars.
+  const id = binding.idFromName(`cao481-v10-${index}`);
   return binding.get(id);
 }
 

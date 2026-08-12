@@ -30,6 +30,8 @@ def validate_off_duty(
     following_includes_local_night: bool = True,
     acclimatisation_state: str = "not_applicable",
     reduction_claimed: bool = False,
+    fdp_commencement_utc_offset_hours: float | None = None,
+    following_off_duty_utc_offset_hours: float | None = None,
 ) -> dict:
     """
     Validate an off-duty period against all applicable CAO 48.1 rules.
@@ -56,6 +58,8 @@ def validate_off_duty(
         preceding_odp_included_night=preceding_odp_included_night,
         following_includes_local_night=following_includes_local_night,
         acclimatisation_state=acclimatisation_state,
+        fdp_commencement_utc_offset_hours=fdp_commencement_utc_offset_hours,
+        following_off_duty_utc_offset_hours=following_off_duty_utc_offset_hours,
     )
 
     checks: list[dict] = []

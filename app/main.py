@@ -85,8 +85,10 @@ AVAILABLE_ENDPOINTS = [
     "/sections/{section_id}",
     "/limits/fdp-table/{appendix}",
     "/limits/cumulative/{appendix}",
+    "/limits/adaptation-table",
     "/calculate/max-fdp",
     "/calculate/min-off-duty",
+    "/calculate/acclimatisation",
     "/validate/fdp",
     "/validate/off-duty",
     "/validate/cumulative",
@@ -216,6 +218,31 @@ app.include_router(limits_router, prefix=API_PREFIX)
 app.include_router(calculate_router, prefix=API_PREFIX)
 app.include_router(validate_router, prefix=API_PREFIX)
 app.include_router(guide_router, prefix=API_PREFIX)
+
+
+# ─── Exception handlers ────────────────────────────────────────────────
+@app.exception_handler(ValueError)
+async def value_error_handler(request, exc: ValueError) -> JSONResponse:
+    """
+    Turn engine-raised ValueErrors into a 422 rather than a 500.
+
+    The calculation engines raise ValueError for genuinely unusable input —
+    an unknown appendix, or Appendix 2 augmented-crew limits requested without
+    an acclimatisation state. Those are the caller's problem to fix and should
+    say so, not present as an unhandled server error. Pydantic's own validation
+    errors are handled by FastAPI before reaching here.
+    """
+    logger.info("Rejecting request with 422: %s", exc)
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "unprocessable_entity",
+            "message": str(exc),
+            "hint": (
+                "See GET /guide for the request schema of every endpoint."
+            ),
+        },
+    )
 
 
 # ─── Health endpoint ───────────────────────────────────────────────────

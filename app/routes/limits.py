@@ -8,8 +8,13 @@ GET /limits/cumulative/{appendix} — Cumulative limit thresholds
 from fastapi import APIRouter, Path
 from fastapi.responses import JSONResponse
 
+from app.data.adaptation import adaptation_table_rows
 from app.data.fdp_tables import FDP_CONFIGS, VALID_APPENDICES
 from app.data.cumulative_limits import CUMULATIVE_CONFIGS
+from app.models.acclimatisation import (
+    AdaptationTableResponse,
+    AdaptationTableRow,
+)
 from app.models.limits import (
     CumulativeLimitsResponse,
     DutyTimeLimitsResponse,
@@ -102,6 +107,50 @@ async def get_fdp_table(
         split_duty_cap_hours=split_cap,
         post_split_max_hours=post_split,
         notes=table.notes,
+    )
+
+
+@router.get(
+    "/limits/adaptation-table",
+    response_model=AdaptationTableResponse,
+    summary="Table 7.1 — adaptation period to become acclimatised",
+    description=(
+        "Returns CAO 48.1 Table 7.1 as data: the continuous off-duty period "
+        "required for a flight crew member to become acclimatised to a new "
+        "location, by time zone change and direction of travel.\n\n"
+        "Static reference data — safe to cache or prerender. To apply the table "
+        "to a specific crew member's history, including the §7.5 "
+        "greatest-displacement selection and the §7.4(b) reduction, use "
+        "`POST /calculate/acclimatisation` instead of implementing the lookup "
+        "yourself."
+    ),
+)
+async def get_adaptation_table() -> AdaptationTableResponse:
+    return AdaptationTableResponse(
+        table_id="Table 7.1",
+        title="Adaptation period to become acclimatised",
+        clause="§7.4, applied per §7.5",
+        rows=[AdaptationTableRow(**row) for row in adaptation_table_rows()],
+        notes=[
+            "An adaptation period is a continuous off-duty period (§6).",
+            "Eastward travel requires a longer adaptation period than westward.",
+            "Select the row using the GREATEST time zone displacement between "
+            "the original location and any later location where an FDP or "
+            "off-duty period commenced — not the current location's (§7.5(b)).",
+            "Use the direction in which that greatest displacement occurred "
+            "(§7.5(d)).",
+            "An adaptation period taken away from home base is reduced by 12 "
+            "hours for each immediately preceding off-duty period that was "
+            "within 2 hours of the adaptation location and included an off-duty "
+            "location local night (§7.4(b)).",
+            "§6 defines a time zone as a region differing by 1 hour or part of "
+            "1 hour, while this table is indexed in whole zones. This API reads "
+            "that as: the §7.1 'less than 2 hours' test uses the raw hour "
+            "difference, and row selection here rounds up to the next whole "
+            "zone. Refer to CAAP 48-01 for guidance.",
+            "An adaptation period may commence before the FCM comes to be in an "
+            "unknown state of acclimatisation (Table 7.1, Note 2).",
+        ],
     )
 
 

@@ -74,13 +74,13 @@ The container exposes port 8000 and includes a built-in health check.
 1. Go to [rapidapi.com/studio](https://rapidapi.com/studio)
 2. Click **Add API Project**
 3. Name: `CAO 48.1 Compliance` / Category: `Other`
-4. Import the OpenAPI spec from your deployed instance: `https://your-domain.com/openapi.json`
+4. Import the OpenAPI spec from your deployed instance: `https://cao481-api.jwboon.workers.dev/openapi.json`
 
 ### 3. Configure Settings
 
 In the RapidAPI Provider Dashboard:
 
-- **Base URL**: `https://your-domain.com`
+- **Base URL**: `https://cao481-api.jwboon.workers.dev`
 - **Security**: Copy the `X-RapidAPI-Proxy-Secret` and set it as the `RAPIDAPI_PROXY_SECRET` environment variable on your server
 - **Environment**: Set `ENVIRONMENT=production` on your server
 

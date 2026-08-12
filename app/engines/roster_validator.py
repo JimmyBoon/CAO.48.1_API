@@ -65,6 +65,23 @@ def _get(event: Any, attr: str, default=None):
     return default
 
 
+def _was_supplied(event: Any, attr: str) -> bool:
+    """
+    Whether the caller actually sent a field, as distinct from it having a value.
+
+    Needed for fields with a non-None default: a Pydantic model always exposes
+    `location`, so reading the attribute cannot tell you whether the caller
+    chose 'home_base' or simply left it out. Pydantic records the difference in
+    model_fields_set.
+    """
+    fields_set = getattr(event, "model_fields_set", None)
+    if fields_set is not None:
+        return attr in fields_set
+    if isinstance(event, dict):
+        return attr in event
+    return False
+
+
 # ─── Public API ───────────────────────────────────────────────────────
 
 def validate_roster(
@@ -115,6 +132,14 @@ def validate_roster(
     preceding_fdp_hours: Optional[float] = None
     preceding_fdp_was_extended: bool = False
     preceding_fdp_extension_hours: float = 0.0
+    # Everything else the following ODP calculation needs from the preceding FDP.
+    preceding_post_fdp_duty_hours: float = 0.0
+    preceding_split_duty: Optional[dict] = None
+    preceding_acclim_state: str = "not_applicable"
+    preceding_fdp_offset: Optional[float] = None
+    # The ODP before the last FDP, for the §10.3(a)/§8.3(a) reduction conditions.
+    previous_odp_duration_hours: Optional[float] = None
+    previous_odp_included_night: bool = False
 
     # Accumulated results
     fdp_results: list[dict] = []
@@ -256,13 +281,39 @@ def validate_roster(
             total_flight_time_hours += flight_h
             total_duty_time_hours += duty_h
 
-            # Track for ODP & cumulative
+            # ── Track everything the following ODP calculation needs ────
+            # Previously only the wall-clock duration and the extension were
+            # carried forward, so the ODP minimum was computed as if the split
+            # duty, the post-FDP duty and the acclimatisation state did not
+            # exist. Each of those changes the answer, and they do not all
+            # change it in the same direction.
             preceding_fdp_hours = duration_h
             preceding_fdp_was_extended = extension is not None
             preceding_fdp_extension_hours = (
                 _get(extension, "hours_used", 0.0)
                 if extension is not None else 0.0
             )
+
+            # actual_duty_time_hours covers the FDP plus any pre/post-flight
+            # duty. Anything beyond the FDP's wall-clock duration is post-FDP
+            # duty, which §10.1/§10.2 and §8.1/§8.2 count towards the 12-hour
+            # threshold. Dropping it UNDER-reports the required rest.
+            preceding_post_fdp_duty_hours = max(duty_h - duration_h, 0.0)
+
+            preceding_split_duty = (
+                split_duty.model_dump()
+                if hasattr(split_duty, "model_dump") else split_duty
+            )
+            preceding_acclim_state = (
+                accl.state if hasattr(accl, "state") else "not_applicable"
+            )
+            # Fall back to the departure-point offset when the FDP does not
+            # declare a separate commencement offset.
+            preceding_fdp_offset = _get(
+                event, "commencement_utc_offset_hours", None,
+            )
+            if preceding_fdp_offset is None:
+                preceding_fdp_offset = offset
 
             fdp_history.append({
                 "fdp_start_utc": fdp_start,
@@ -281,11 +332,13 @@ def validate_roster(
             duration_h      = _get(event, "duration_hours", 0.0)
             includes_night  = _get(event, "includes_local_night", False)
             following_night = _get(event, "following_includes_local_night", True)
-            location        = _get(event, "location", "away")
+            location        = _get(event, "location", "home_base")
+            odp_offset      = _get(event, "utc_offset_hours", None)
 
             odp_item_violations: list[dict] = []
             odp_item_checks: list[dict] = []
             odp_item_warnings: list[str] = []
+            odp_item_notes: list[str] = []
 
             if preceding_fdp_hours is not None:
                 try:
@@ -293,16 +346,48 @@ def validate_roster(
                         appendix=appendix_upper,
                         preceding_fdp_duration_hours=preceding_fdp_hours,
                         actual_off_duty_hours=duration_h,
+                        post_fdp_duty_hours=preceding_post_fdp_duty_hours,
                         location=location,
+                        split_duty_duration_hours=(
+                            preceding_split_duty.get("duration_hours")
+                            if preceding_split_duty else None
+                        ),
+                        split_duty_accommodation=(
+                            preceding_split_duty.get("accommodation")
+                            if preceding_split_duty else None
+                        ),
+                        split_duty_overlaps_night=bool(
+                            preceding_split_duty.get("overlaps_2300_0529")
+                            if preceding_split_duty else False
+                        ),
                         was_extended=preceding_fdp_was_extended,
                         extension_hours=preceding_fdp_extension_hours,
+                        preceding_odp_duration_hours=previous_odp_duration_hours,
+                        preceding_odp_included_night=previous_odp_included_night,
                         following_includes_local_night=following_night,
+                        acclimatisation_state=preceding_acclim_state,
+                        fdp_commencement_utc_offset_hours=preceding_fdp_offset,
+                        following_off_duty_utc_offset_hours=odp_offset,
                     )
                     odp_item_violations = odp_result.get("violations", [])
                     odp_item_checks = odp_result.get("checks", [])
                     odp_item_warnings = odp_result.get("warnings", [])
+                    odp_item_notes = list(odp_result.get("calculation_notes", []))
                 except ValueError as exc:
                     warnings.append(f"ODP {odp_index}: validation skipped — {exc}")
+
+                # Make the home base / away assumption auditable. It is worth two
+                # hours on the same duty, so a silent default is not acceptable.
+                #
+                # A Pydantic model always exposes `location` because it has a
+                # default, so "was it supplied?" has to be asked of
+                # model_fields_set rather than of the attribute value.
+                if not _was_supplied(event, "location"):
+                    odp_item_notes.append(
+                        f"location not supplied — assumed '{location}', the "
+                        f"longer of the two requirements. Set it explicitly: away "
+                        f"and home base differ by 2 hours."
+                    )
 
             odp_results.append({
                 "odp_number": odp_index,
@@ -313,6 +398,7 @@ def validate_roster(
                 "violations": odp_item_violations,
                 "checks": odp_item_checks,
                 "warnings": odp_item_warnings,
+                "calculation_notes": odp_item_notes,
             })
 
             # A qualifying recovery (≥36h + local night) resets streaks
@@ -321,8 +407,20 @@ def validate_roster(
                 consecutive_wocl = 0
 
             last_odp_had_local_night = includes_night
+
+            # Carry this ODP forward: §10.3(a)/§8.3(a) make the 9-hour reduction
+            # conditional on the off-duty period immediately BEFORE the last FDP
+            # being at least 12 hours and including a local night. Without these
+            # the reduction could never be evaluated at all.
+            previous_odp_duration_hours = duration_h
+            previous_odp_included_night = includes_night
+
             # Reset preceding FDP tracking so next ODP doesn't re-validate same FDP
             preceding_fdp_hours = None
+            preceding_post_fdp_duty_hours = 0.0
+            preceding_split_duty = None
+            preceding_acclim_state = "not_applicable"
+            preceding_fdp_offset = None
 
         # ── Rest day event ─────────────────────────────────────────────
         elif event_type == "rest_day":

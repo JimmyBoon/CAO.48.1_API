@@ -7,7 +7,9 @@ POST /calculate/min-off-duty — Minimum off-duty period calculator
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.models.base import StrictModel
 
 
 # ─── Common enumerations ──────────────────────────────────────────────
@@ -19,22 +21,63 @@ Location = Literal["home_base", "away"]
 CrewRestClass = Literal["class_1", "class_2", "class_3"]
 
 
+# ─── Shared cross-field validation ────────────────────────────────────
+
+def require_acclimatisation_for_augmented_crew(
+    appendix: str,
+    augmented_crew: object | None,
+    acclimatisation: object | None,
+) -> None:
+    """
+    Enforce that Appendix 2 augmented-crew requests carry a usable state.
+
+    Shared by MaxFdpRequest and ValidateFdpRequest so the two endpoints
+    cannot drift apart. Raises ValueError, which Pydantic converts into a
+    422 naming the field.
+    """
+    if appendix != "2" or augmented_crew is None:
+        return
+
+    state = getattr(acclimatisation, "state", None)
+    if state not in ("acclimatised", "unknown"):
+        raise ValueError(
+            "acclimatisation.state is required when augmented_crew is supplied "
+            "under Appendix 2, and must be 'acclimatised' or 'unknown'. "
+            "The augmented FDP limits (Tables 5.1 and 5.2) are selected by "
+            "acclimatisation state; there is no acclimatisation-independent "
+            "augmented table. Received: "
+            f"{state!r}."
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # POST /calculate/max-fdp
 # ═══════════════════════════════════════════════════════════════════════
 
 # ─── Request models ───────────────────────────────────────────────────
 
-class AcclimatisationInput(BaseModel):
+class AcclimatisationInput(StrictModel):
     """Acclimatisation state and offset for Appendix 2."""
     state: AcclimState = Field(description="Acclimatisation state of the FCM.")
     acclimatised_time_offset_hours: Optional[float] = Field(
         default=None,
-        description="UTC offset of the acclimatised time zone (hours). Required when state='acclimatised' under Appendix 2.",
+        description=(
+            "UTC offset (hours) of the location the FCM is acclimatised to — or, "
+            "where state='unknown', the location they were LAST acclimatised to. "
+            "Under Appendix 2 this clock governs the FDP table band, the "
+            "early-start test and the WOCL determination (CAO 48.1 §6, "
+            "'acclimatised time'). Supply it whenever the FCM signs on somewhere "
+            "other than the location they are acclimatised to — the everyday case "
+            "of a Perth-acclimatised crew member signing on in Singapore. "
+            "If omitted, the departure point's local_time_offset_hours is used, "
+            "which is correct only when the two locations share a clock. "
+            "Ignored for every appendix other than 2, where the instrument "
+            "specifies the local time at the point the FDP commences."
+        ),
     )
 
 
-class InFlightRestEntry(BaseModel):
+class InFlightRestEntry(StrictModel):
     """In-flight rest record for one FCM in an augmented crew."""
     fcm_id: str = Field(description="Identifier for the flight crew member.")
     rest_hours: float = Field(description="Hours of in-flight rest taken.")
@@ -43,7 +86,7 @@ class InFlightRestEntry(BaseModel):
     )
 
 
-class AugmentedCrewInput(BaseModel):
+class AugmentedCrewInput(StrictModel):
     """Augmented crew configuration (Appendix 2 only)."""
     additional_fcms: int = Field(
         ge=1, le=2,
@@ -58,7 +101,7 @@ class AugmentedCrewInput(BaseModel):
     )
 
 
-class SplitDutyInput(BaseModel):
+class SplitDutyInput(StrictModel):
     """Split duty rest details."""
     rest_start_utc: str = Field(description="Rest period start time (ISO 8601 UTC).")
     rest_end_utc: str = Field(description="Rest period end time (ISO 8601 UTC).")
@@ -73,7 +116,7 @@ class SplitDutyInput(BaseModel):
     )
 
 
-class MaxFdpRequest(BaseModel):
+class MaxFdpRequest(StrictModel):
     """Request body for POST /calculate/max-fdp."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -113,6 +156,21 @@ class MaxFdpRequest(BaseModel):
         default=None,
         description="Duration of preceding off-duty period in hours. Required for Appendix 2 unknown acclimatisation table lookup.",
     )
+
+    @model_validator(mode="after")
+    def require_acclimatisation_for_augmented(self) -> "MaxFdpRequest":
+        """
+        Appendix 2 augmented-crew limits are keyed to acclimatisation state.
+
+        Tables 5.1 and 5.2 are selected by acclimatisation, and there is no
+        acclimatisation-independent augmented table to fall back on. Without
+        this check the engine used to reach a table that has no augmented
+        sector columns and raise a KeyError, surfacing as a 500.
+        """
+        require_acclimatisation_for_augmented_crew(
+            self.appendix, self.augmented_crew, self.acclimatisation,
+        )
+        return self
 
     model_config = {
         "json_schema_extra": {
@@ -217,7 +275,7 @@ class MaxFdpResponse(BaseModel):
 
 # ─── Request models ───────────────────────────────────────────────────
 
-class PrecedingSplitDutyInput(BaseModel):
+class PrecedingSplitDutyInput(StrictModel):
     """Split duty rest taken during the preceding FDP."""
     duration_hours: float = Field(gt=0, description="Duration of the split duty rest (hours).")
     accommodation: Accommodation = Field(description="Accommodation type during rest.")
@@ -227,7 +285,7 @@ class PrecedingSplitDutyInput(BaseModel):
     )
 
 
-class PrecedingFdpInput(BaseModel):
+class PrecedingFdpInput(StrictModel):
     """Details of the FDP preceding the off-duty period."""
     start_utc: str = Field(description="FDP start time (ISO 8601 UTC).")
     end_utc: str = Field(description="FDP end time (ISO 8601 UTC).")
@@ -237,6 +295,19 @@ class PrecedingFdpInput(BaseModel):
         description="Additional duty time after FDP end (e.g. post-flight duties).",
     )
     location: Location = Field(description="Where the off-duty period will be taken.")
+    commencement_utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time at the place the FDP COMMENCED. "
+            "Supply together with following_off_duty_utc_offset_hours and the API "
+            "derives displacement time per §6 — the difference in local time "
+            "between where the FDP commenced and where the following off-duty "
+            "period is taken — including the direction of travel. Displacement is "
+            "an addend in §10.1, §10.2, §8.1, §8.2 and Appendix 4B §5.1, so "
+            "without these two offsets the returned figure is a floor rather "
+            "than a total, and the response says so."
+        ),
+    )
     split_duty: Optional[PrecedingSplitDutyInput] = Field(
         default=None,
         description="Split duty rest details, if taken during this FDP.",
@@ -251,13 +322,13 @@ class PrecedingFdpInput(BaseModel):
     )
 
 
-class PrecedingOffDutyInput(BaseModel):
+class PrecedingOffDutyInput(StrictModel):
     """Details of the off-duty period preceding the FDP."""
     duration_hours: float = Field(gt=0, description="Duration of the preceding off-duty period (hours).")
     included_local_night: bool = Field(description="Whether the preceding ODP included a local night.")
 
 
-class MinOffDutyRequest(BaseModel):
+class MinOffDutyRequest(StrictModel):
     """Request body for POST /calculate/min-off-duty."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -274,9 +345,28 @@ class MinOffDutyRequest(BaseModel):
         default=True,
         description="Whether the following off-duty period will include a local night.",
     )
+    following_off_duty_utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time at the place the following off-duty "
+            "period is TAKEN. Pairs with preceding_fdp.commencement_utc_offset_hours "
+            "to derive displacement time (§6)."
+        ),
+    )
     acclimatisation_state: AcclimState = Field(
         default="not_applicable",
-        description="Acclimatisation state (for displacement time calculation under Appendix 2).",
+        description=(
+            "Acclimatisation state of the FCM. **Materially changes the answer "
+            "under Appendix 2**, where §10.1(c) and §10.2(b) are separate "
+            "branches for an unknown state: the base is 14 hours rather than 10 "
+            "or 12, the home base / away distinction does not apply, and the FULL "
+            "displacement time is added rather than only the excess over 3 hours "
+            "west / 2 hours east. An unknown-state FCM is also ineligible for the "
+            "§10.3 and §10.4 reductions, which require an acclimatised state. "
+            "Appendices 3 and 4 have no unknown-state branch, so the value does "
+            "not affect their result. Use POST /calculate/acclimatisation to "
+            "determine the state rather than declaring it by hand."
+        ),
     )
 
     model_config = {
@@ -290,6 +380,7 @@ class MinOffDutyRequest(BaseModel):
                         "duration_hours": 10.5,
                         "post_fdp_duty_hours": 0.5,
                         "location": "away",
+                        "commencement_utc_offset_hours": 8.0,
                         "was_extended": False,
                     },
                     "preceding_off_duty": {
@@ -297,6 +388,7 @@ class MinOffDutyRequest(BaseModel):
                         "included_local_night": True,
                     },
                     "following_off_duty_location": "away",
+                    "following_off_duty_utc_offset_hours": 8.0,
                     "following_off_duty_includes_local_night": True,
                 }
             ]

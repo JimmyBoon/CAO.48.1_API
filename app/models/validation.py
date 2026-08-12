@@ -13,6 +13,7 @@ from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.base import StrictModel
 from app.models.calculation import (
     AcclimState,
     AcclimatisationInput,
@@ -22,6 +23,7 @@ from app.models.calculation import (
     PrecedingFdpInput,
     PrecedingOffDutyInput,
     SplitDutyInput,
+    require_acclimatisation_for_augmented_crew,
 )
 
 
@@ -108,7 +110,7 @@ class ValidationResponse(BaseModel):
 # POST /validate/fdp
 # ═══════════════════════════════════════════════════════════════════════
 
-class ExtensionInput(BaseModel):
+class ExtensionInput(StrictModel):
     """Details of an FDP extension applied beyond the normal limit."""
 
     type: ExtensionType = Field(
@@ -132,7 +134,7 @@ class ExtensionInput(BaseModel):
     )
 
 
-class ValidateFdpRequest(BaseModel):
+class ValidateFdpRequest(StrictModel):
     """Request body for POST /validate/fdp."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -186,6 +188,14 @@ class ValidateFdpRequest(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def require_acclimatisation_for_augmented(self) -> "ValidateFdpRequest":
+        """Mirror of the MaxFdpRequest check — see that model for rationale."""
+        require_acclimatisation_for_augmented_crew(
+            self.appendix, self.augmented_crew, self.acclimatisation,
+        )
+        return self
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -206,7 +216,7 @@ class ValidateFdpRequest(BaseModel):
 # POST /validate/off-duty
 # ═══════════════════════════════════════════════════════════════════════
 
-class ValidateOffDutyRequest(BaseModel):
+class ValidateOffDutyRequest(StrictModel):
     """Request body for POST /validate/off-duty."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -238,9 +248,22 @@ class ValidateOffDutyRequest(BaseModel):
         default=True,
         description="Whether the off-duty period includes a local night.",
     )
+    following_off_duty_utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time where the off-duty period is taken. "
+            "Pairs with preceding_fdp.commencement_utc_offset_hours to derive "
+            "displacement time (§6)."
+        ),
+    )
     acclimatisation_state: AcclimState = Field(
         default="not_applicable",
-        description="Acclimatisation state (for displacement time calculation under Appendix 2).",
+        description=(
+            "Acclimatisation state of the FCM. Materially changes the required "
+            "minimum under Appendix 2, where §10.1(c) and §10.2(b) set a 14-hour "
+            "base for an unknown state and add the full displacement time. See "
+            "POST /calculate/min-off-duty for the detail."
+        ),
     )
 
     model_config = {
@@ -267,7 +290,7 @@ class ValidateOffDutyRequest(BaseModel):
 # POST /validate/cumulative
 # ═══════════════════════════════════════════════════════════════════════
 
-class FdpHistoryRecord(BaseModel):
+class FdpHistoryRecord(StrictModel):
     """A single FDP entry in a pilot's history log."""
 
     fdp_start_utc: datetime = Field(description="FDP start time (ISO 8601 UTC).")
@@ -290,7 +313,7 @@ class FdpHistoryRecord(BaseModel):
     )
 
 
-class CumulativeSummaryInput(BaseModel):
+class CumulativeSummaryInput(StrictModel):
     """
     Pre-aggregated cumulative totals — accepted as a fallback when
     a full FDP history log is not available.
@@ -357,7 +380,7 @@ class CumulativeSummaryInput(BaseModel):
     )
 
 
-class ValidateCumulativeRequest(BaseModel):
+class ValidateCumulativeRequest(StrictModel):
     """Request body for POST /validate/cumulative."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -426,7 +449,7 @@ class ValidateCumulativeRequest(BaseModel):
 # POST /validate/sequence
 # ═══════════════════════════════════════════════════════════════════════
 
-class SequenceFdpEvent(BaseModel):
+class SequenceFdpEvent(StrictModel):
     """A single FDP within a duty sequence."""
 
     event_type: Literal["fdp"] = "fdp"
@@ -439,7 +462,27 @@ class SequenceFdpEvent(BaseModel):
         ge=0, description="Total duty time including pre/post-flight (hours)."
     )
     local_time_offset_hours: float = Field(
-        description="UTC offset at the departure point (hours). Used to determine early-start status."
+        description="UTC offset at the departure point (hours)."
+    )
+    acclimatisation_state: AcclimState = Field(
+        default="not_applicable",
+        description=(
+            "Acclimatisation state for this FDP. Under Appendix 2, a run of "
+            "4 consecutive FDPs in an unknown state is the maximum permitted "
+            "before an adaptation period is required (Appendix 2 §3.4), so the "
+            "sequence validator tracks this across events."
+        ),
+    )
+    acclimatised_time_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of the location this FCM is acclimatised to — "
+            "or was last acclimatised to, where the state is unknown. Under "
+            "Appendix 2 this clock governs the FDP table band, the early-start "
+            "test and the WOCL determination (CAO 48.1 §6). Defaults to "
+            "local_time_offset_hours, which is correct only when the FCM signs "
+            "on at the location they are acclimatised to."
+        ),
     )
     sectors: int = Field(ge=1, description="Number of sectors (flights) in this FDP.")
     crosses_wocl: bool = Field(
@@ -449,9 +492,40 @@ class SequenceFdpEvent(BaseModel):
             "(0200–0559 local time). Used to track consecutive WOCL infringements."
         ),
     )
+    commencement_utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time where this FDP COMMENCED. Pairs "
+            "with the following off-duty event's utc_offset_hours to derive "
+            "displacement time (§6) for the minimum off-duty calculation. "
+            "Defaults to local_time_offset_hours when omitted."
+        ),
+    )
+    extension: Optional[ExtensionInput] = Field(
+        default=None,
+        description="Extension applied to this FDP, if any.",
+    )
+    augmented_crew: Optional[AugmentedCrewInput] = Field(
+        default=None,
+        description="Augmented crew configuration (Appendix 2).",
+    )
+    split_duty: Optional[SplitDutyInput] = Field(
+        default=None,
+        description=(
+            "Split duty rest details, if a split-duty rest was taken during this "
+            "FDP. Feeds both the FDP extension (§4.1/§3.1) and the off-duty "
+            "credit (§4.2/§3.2) — the credit reduces the effective duty used for "
+            "the FOLLOWING off-duty period's minimum, which can move it below the "
+            "12-hour threshold and so change which subclause applies."
+        ),
+    )
+    single_pilot: bool = Field(
+        default=False,
+        description="Whether this is a single-pilot operation (Appendices 4B, 5).",
+    )
 
 
-class SequenceOdpEvent(BaseModel):
+class SequenceOdpEvent(StrictModel):
     """An off-duty period within a duty sequence."""
 
     event_type: Literal["off_duty"] = "off_duty"
@@ -469,8 +543,23 @@ class SequenceOdpEvent(BaseModel):
         ),
     )
     location: Location = Field(
-        default="away",
-        description="Whether the off-duty period is at home base or away.",
+        default="home_base",
+        description=(
+            "Whether the off-duty period is at home base or away. **Worth two "
+            "hours**: §10.1(a)/§8.1(a) require 10 hours away, §10.1(b)/§8.1(b) "
+            "require 12 at home base. Defaults to 'home_base' because that is "
+            "the longer requirement — a silent default on a fatigue calculator "
+            "should not be the permissive one. Set it explicitly; the response "
+            "notes when the default was used."
+        ),
+    )
+    utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time where this off-duty period is "
+            "TAKEN. Pairs with the preceding FDP's commencement_utc_offset_hours "
+            "to derive displacement time (§6)."
+        ),
     )
 
 
@@ -480,7 +569,7 @@ SequenceEvent = Annotated[
 ]
 
 
-class ValidateSequenceRequest(BaseModel):
+class ValidateSequenceRequest(StrictModel):
     """Request body for POST /validate/sequence."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")
@@ -538,7 +627,7 @@ class ValidateSequenceRequest(BaseModel):
 # POST /validate/roster
 # ═══════════════════════════════════════════════════════════════════════
 
-class RosterFdpEvent(BaseModel):
+class RosterFdpEvent(StrictModel):
     """A single FDP within a roster — full detail version of SequenceFdpEvent."""
 
     event_type: Literal["fdp"] = "fdp"
@@ -572,15 +661,29 @@ class RosterFdpEvent(BaseModel):
     )
     split_duty: Optional[SplitDutyInput] = Field(
         default=None,
-        description="Split duty rest details, if applicable.",
+        description=(
+            "Split duty rest details, if applicable. Feeds both the FDP extension "
+            "(§4.1/§3.1) and the off-duty credit (§4.2/§3.2) — the credit reduces "
+            "the effective duty used for the FOLLOWING off-duty period's minimum, "
+            "which can move it below the 12-hour threshold and so change which "
+            "subclause applies."
+        ),
     )
     single_pilot: bool = Field(
         default=False,
         description="Whether this is a single-pilot operation.",
     )
+    commencement_utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time where this FDP COMMENCED. Pairs "
+            "with the following off-duty event's utc_offset_hours to derive "
+            "displacement time (§6). Defaults to local_time_offset_hours."
+        ),
+    )
 
 
-class RosterOdpEvent(BaseModel):
+class RosterOdpEvent(StrictModel):
     """An off-duty period within a roster."""
 
     event_type: Literal["off_duty"] = "off_duty"
@@ -601,12 +704,27 @@ class RosterOdpEvent(BaseModel):
         description="True if the next following off-duty period includes a local night.",
     )
     location: Location = Field(
-        default="away",
-        description="Whether the off-duty period is at home base or away.",
+        default="home_base",
+        description=(
+            "Whether the off-duty period is at home base or away. **Worth two "
+            "hours**: §10.1(a)/§8.1(a) require 10 hours away, §10.1(b)/§8.1(b) "
+            "require 12 at home base. Defaults to 'home_base' because that is "
+            "the longer requirement — a silent default on a fatigue calculator "
+            "should not be the permissive one. Set it explicitly; the response "
+            "notes when the default was used."
+        ),
+    )
+    utc_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset (hours) of local time where this off-duty period is "
+            "TAKEN. Pairs with the preceding FDP's commencement_utc_offset_hours "
+            "to derive displacement time (§6)."
+        ),
     )
 
 
-class RosterRestDayEvent(BaseModel):
+class RosterRestDayEvent(StrictModel):
     """An explicit planned rest day (free day) within a roster."""
 
     event_type: Literal["rest_day"] = "rest_day"
@@ -653,6 +771,14 @@ class OdpValidationItem(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     checks: list[CheckResult] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    calculation_notes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Human-readable breakdown of how the minimum was reached, with clause "
+            "references — including any split-duty credit, displacement time, and "
+            "whether the home base / away location was defaulted."
+        ),
+    )
 
 
 class RosterSummary(BaseModel):
@@ -670,7 +796,7 @@ class RosterSummary(BaseModel):
     total_violations: int = Field(description="Total number of distinct violations across all checks.")
 
 
-class ValidateRosterRequest(BaseModel):
+class ValidateRosterRequest(StrictModel):
     """Request body for POST /validate/roster."""
 
     appendix: AppendixId = Field(description="Which appendix rules apply.")

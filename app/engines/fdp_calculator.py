@@ -53,8 +53,24 @@ def calculate_max_fdp(
     local_minutes = _utc_to_local_minutes(start_dt, local_time_offset_hours)
     local_hhmm = f"{local_minutes // 60:02d}{local_minutes % 60:02d}"
 
-    # ─── Determine which time to use for table lookup ─────────────
-    if appendix == "2" and acclimatisation_state == "acclimatised" and acclimatised_time_offset_hours is not None:
+    # ─── Determine which clock governs this calculation ───────────
+    # CAO 48.1 §6 defines 'acclimatised time' as local time at the location
+    # where the FCM is acclimatised, and ties BOTH the Appendix 2 table band
+    # AND the Appendix 2 early-start / WOCL tests to it:
+    #
+    #   - acclimatised state -> local time where the FCM IS acclimatised
+    #   - unknown state      -> local time where the FCM WAS LAST acclimatised
+    #   - every other appendix -> local time where the FDP commences
+    #
+    # The caller supplies that offset as acclimatised_time_offset_hours. When
+    # it is absent we fall back to the departure point, which is the correct
+    # answer whenever the two locations coincide.
+    use_acclimatised_clock = (
+        appendix == "2"
+        and acclimatisation_state in ("acclimatised", "unknown")
+        and acclimatised_time_offset_hours is not None
+    )
+    if use_acclimatised_clock:
         lookup_minutes = _utc_to_local_minutes(start_dt, acclimatised_time_offset_hours)
         lookup_label = "acclimatised"
     else:
@@ -62,6 +78,15 @@ def calculate_max_fdp(
         lookup_label = "local"
 
     lookup_hhmm = f"{lookup_minutes // 60:02d}{lookup_minutes % 60:02d}"
+
+    # Make a divergence between the two clocks explicit in the audit trail —
+    # this is the case that used to be computed wrongly.
+    if use_acclimatised_clock and lookup_minutes != local_minutes:
+        notes.append(
+            f"Appendix 2 uses acclimatised time (§6): departure point local "
+            f"time is {local_hhmm}, acclimatised time is {lookup_hhmm}. "
+            f"Table band, early start and WOCL are assessed on {lookup_hhmm}."
+        )
 
     # ─── Select the correct sub-table ─────────────────────────────
     table_key, table = _select_table(
@@ -90,9 +115,11 @@ def calculate_max_fdp(
     # ─── Apply WOCL / early start reduction ───────────────────────
     wocl_reduction = 0.0
     if config.wocl_early_start:
+        # Assessed on the governing clock, not the departure point's — see the
+        # use_acclimatised_clock block above.
         wocl_reduction = _calculate_wocl_reduction(
             consecutive_early_starts, consecutive_wocl_infringements,
-            local_minutes, notes,
+            lookup_minutes, notes, lookup_label,
         )
         if wocl_reduction > 0:
             running_total -= wocl_reduction
@@ -153,9 +180,28 @@ def _select_table(
     augmented_crew: dict | None,
     split_duty: dict | None,
 ) -> tuple[str, FdpTable]:
-    """Select the correct sub-table based on operational parameters."""
+    """
+    Select the correct sub-table based on operational parameters.
+
+    Raises
+    ------
+    ValueError
+        If Appendix 2 augmented-crew limits are requested without a usable
+        acclimatisation state. There is no augmented sub-table that is not
+        keyed to acclimatisation, so silently falling back to the plain
+        acclimatised table would produce a KeyError further down (or, worse,
+        a plausible wrong answer). The route layer turns this into a 422.
+    """
     if appendix == "2":
         has_augmented = augmented_crew is not None
+        if has_augmented and acclim_state not in ("acclimatised", "unknown"):
+            raise ValueError(
+                "Appendix 2 augmented crew operations require an explicit "
+                "acclimatisation state of 'acclimatised' or 'unknown'. "
+                "Supply acclimatisation.state — the augmented FDP limits in "
+                "Tables 5.1 and 5.2 are keyed to it and there is no "
+                "acclimatisation-independent augmented table."
+            )
         if has_augmented and acclim_state == "acclimatised":
             return "augmented_acclimatised", config.tables["augmented_acclimatised"]
         elif has_augmented and acclim_state == "unknown":
@@ -269,12 +315,25 @@ def _sector_description(sector_key: str) -> str:
 def _calculate_wocl_reduction(
     consecutive_early_starts: int,
     consecutive_wocl_infringements: int,
-    local_minutes: int,
+    assessment_minutes: int,
     notes: list[str],
+    clock_label: str = "local",
 ) -> float:
-    """Calculate FDP reduction for WOCL/early start rules."""
-    # Early start: 0500-0659 local
-    is_early_start = _hm(5) <= local_minutes <= _hm(6, 59)
+    """
+    Calculate FDP reduction for WOCL/early start rules.
+
+    Parameters
+    ----------
+    assessment_minutes : int
+        Minutes from midnight on the clock that governs the early-start test.
+        For Appendix 2 this is acclimatised time (§6); for every other
+        appendix it is local time at the point the FDP commences.
+    clock_label : str
+        'acclimatised' or 'local' — used only to make the notes unambiguous
+        about which clock produced the determination.
+    """
+    # Early start: 0500-0659 on the governing clock
+    is_early_start = _hm(5) <= assessment_minutes <= _hm(6, 59)
 
     if not is_early_start:
         return 0.0
@@ -284,17 +343,20 @@ def _calculate_wocl_reduction(
 
     if total_consecutive <= 3:
         notes.append(
-            f"Early start #{total_consecutive} of 3 allowed: no reduction"
+            f"Early start #{total_consecutive} of 3 allowed "
+            f"(assessed on {clock_label} time): no reduction"
         )
         return 0.0
     elif total_consecutive == 4:
         notes.append(
-            f"4th consecutive early start: FDP reduced by 2h (WOCL rule)"
+            f"4th consecutive early start (assessed on {clock_label} time): "
+            f"FDP reduced by 2h (WOCL rule)"
         )
         return 2.0
     else:
         notes.append(
-            f"5th+ consecutive early start: FDP reduced by 4h (WOCL rule)"
+            f"5th+ consecutive early start (assessed on {clock_label} time): "
+            f"FDP reduced by 4h (WOCL rule)"
         )
         return 4.0
 
@@ -316,28 +378,61 @@ def _apply_split_duty(
     description = ""
     post_split_max = rules.post_split_max_hours if rules.post_split_max_hours < 99 else None
 
-    # Check night overlap special rules first
-    if overlaps_night and accommodation == "sleeping":
-        if duration >= rules.night_overlap_min_sleeping:
-            # Night overlap with sufficient sleeping rest
-            new_total = min(current_fdp + duration, rules.night_overlap_cap_hours)
-            extension = new_total - current_fdp
-            clause = f"§{'4' if appendix == '2' else '3'}.night"
-            description = (
-                f"Split-duty rest {duration}h sleeping overlapping night window: "
-                f"+{extension}h (capped at {rules.night_overlap_cap_hours}h)"
-            )
+    # ─── Night-window overlap (Appendix 2 §4.4 and equivalents) ───────
+    # Once the rest period touches the night window at all, the night-window
+    # regime GOVERNS — it is not an optional better deal sitting alongside the
+    # standard §4.1 path. A rest that touches the window but does not meet the
+    # stricter requirements earns no extension, rather than falling through to
+    # the more permissive 4-hour rule below.
+    if overlaps_night:
+        if accommodation != "sleeping":
             notes.append(
-                f"Split duty: {duration}h sleeping with night overlap -> "
-                f"cap {rules.night_overlap_cap_hours}h ({clause})"
+                f"Split duty: {duration}h {accommodation} overlapping the "
+                f"night window requires sleeping accommodation -> no extension "
+                f"(§{'4.4' if appendix == '2' else '3.4'})"
             )
             return {
-                "extension": extension,
-                "new_total": new_total,
-                "clause": clause,
-                "description": description,
-                "post_split_max": post_split_max,
+                "extension": 0.0,
+                "new_total": current_fdp,
+                "clause": "",
+                "description": "",
+                "post_split_max": None,
             }
+
+        if duration < rules.night_overlap_min_sleeping:
+            notes.append(
+                f"Split duty: {duration}h sleeping overlapping the night window "
+                f"is below the {rules.night_overlap_min_sleeping}h minimum that "
+                f"applies once the rest includes any part of the night window "
+                f"-> no extension (§{'4.4' if appendix == '2' else '3.4'})"
+            )
+            return {
+                "extension": 0.0,
+                "new_total": current_fdp,
+                "clause": "",
+                "description": "",
+                "post_split_max": None,
+            }
+
+        # Night overlap with sufficient sleeping rest
+        new_total = min(current_fdp + duration, rules.night_overlap_cap_hours)
+        extension = new_total - current_fdp
+        clause = f"§{'4.4' if appendix == '2' else '3.4'}"
+        description = (
+            f"Split-duty rest {duration}h sleeping overlapping night window: "
+            f"+{extension}h (capped at {rules.night_overlap_cap_hours}h)"
+        )
+        notes.append(
+            f"Split duty: {duration}h sleeping with night overlap -> "
+            f"cap {rules.night_overlap_cap_hours}h ({clause})"
+        )
+        return {
+            "extension": extension,
+            "new_total": new_total,
+            "clause": clause,
+            "description": description,
+            "post_split_max": post_split_max,
+        }
 
     # Standard sleeping accommodation
     if accommodation == "sleeping" and duration >= rules.sleeping_min_hours:

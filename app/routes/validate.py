@@ -163,6 +163,8 @@ async def validate_off_duty_endpoint(
             following_includes_local_night=request.following_off_duty_includes_local_night,
             acclimatisation_state=request.acclimatisation_state,
             reduction_claimed=request.reduction_claimed,
+            fdp_commencement_utc_offset_hours=request.preceding_fdp.commencement_utc_offset_hours,
+            following_off_duty_utc_offset_hours=request.following_off_duty_utc_offset_hours,
         )
     except ValueError as exc:
         return JSONResponse(
@@ -356,6 +358,7 @@ async def validate_roster_endpoint(
                 violations=[Violation(**v) for v in r["violations"]],
                 checks=[CheckResult(**c) for c in r["checks"]],
                 warnings=r["warnings"],
+                calculation_notes=r.get("calculation_notes", []),
             )
             for r in result["odp_results"]
         ],

@@ -7,8 +7,13 @@ POST /calculate/min-off-duty — Minimum off-duty period calculator
 
 from fastapi import APIRouter
 
+from app.engines.acclimatisation_calculator import determine_acclimatisation
 from app.engines.fdp_calculator import calculate_max_fdp
 from app.engines.off_duty_calculator import calculate_min_off_duty
+from app.models.acclimatisation import (
+    AcclimatisationRequest,
+    AcclimatisationResponse,
+)
 from app.models.calculation import (
     Adjustment,
     MaxFdpRequest,
@@ -74,6 +79,45 @@ async def calc_max_fdp(request: MaxFdpRequest) -> MaxFdpResponse:
 
 
 @router.post(
+    "/calculate/acclimatisation",
+    response_model=AcclimatisationResponse,
+    summary="Determine an FCM's state of acclimatisation",
+    description=(
+        "Determines a flight crew member's state of acclimatisation at a "
+        "nominated moment under CAO 48.1 §7, from where they were last "
+        "acclimatised and every FDP or off-duty period commenced since.\n\n"
+        "Returns the state, the location they are acclimatised **to**, and the "
+        "clause that produced the determination. The returned "
+        "`acclimatised_to.utc_offset_hours` is the value to pass as "
+        "`acclimatisation.acclimatised_time_offset_hours` on "
+        "`/calculate/max-fdp` and `/validate/fdp` — under Appendix 2 the FDP "
+        "table band, the early-start test and the WOCL determination are all "
+        "defined against local time at that location rather than at the "
+        "departure point.\n\n"
+        "**States:** `acclimatised`, `unknown` (the §7.3 determination, which "
+        "has its own FDP tables), and `indeterminate` — meaning the supplied "
+        "history was not sufficient to reach any determination. "
+        "`indeterminate` is not a conservative substitute for `unknown` and "
+        "must not be used for a table lookup.\n\n"
+        "Stateless: supply the full history on every call. UTC offsets are "
+        "taken as authoritative and no time zone database is consulted, which "
+        "keeps daylight saving out of the calculation and honours §6's "
+        "provision allowing an AOC holder to nominate an adjoining zone."
+    ),
+)
+async def calc_acclimatisation(
+    request: AcclimatisationRequest,
+) -> AcclimatisationResponse:
+    result = determine_acclimatisation(
+        last_acclimatised=request.last_acclimatised.model_dump(),
+        as_of_utc=request.as_of_utc,
+        events=[event.model_dump() for event in request.events],
+        home_base=request.home_base,
+    )
+    return AcclimatisationResponse(**result)
+
+
+@router.post(
     "/calculate/min-off-duty",
     response_model=MinOffDutyResponse,
     summary="Calculate minimum required off-duty period",
@@ -113,6 +157,8 @@ async def calc_min_off_duty(request: MinOffDutyRequest) -> MinOffDutyResponse:
         ),
         following_includes_local_night=request.following_off_duty_includes_local_night,
         acclimatisation_state=request.acclimatisation_state,
+        fdp_commencement_utc_offset_hours=request.preceding_fdp.commencement_utc_offset_hours,
+        following_off_duty_utc_offset_hours=request.following_off_duty_utc_offset_hours,
     )
 
     reduction = None
