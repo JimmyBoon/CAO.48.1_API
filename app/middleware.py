@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Documentation / spec routes. In development these are always open so you can
 # browse Swagger locally. In production they are treated like any other route
 # and require the proxy secret (see dispatch()).
-_DOC_PATHS = ("/openapi.json", "/docs", "/redoc")
+_DOC_PATHS = ("/openapi.json", "/docs", "/redoc", "/api/v1/cao481/health")
 
 
 class RapidAPIProxyMiddleware(BaseHTTPMiddleware):
