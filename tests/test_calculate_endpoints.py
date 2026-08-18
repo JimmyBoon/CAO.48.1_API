@@ -338,4 +338,4 @@ class TestHealthEndpointPhase2:
         ) as client:
             resp = await client.get(f"{API_PREFIX}/health")
             data = resp.json()
-            assert data["version"] == "0.4.0"
+            assert data["version"] == "0.5.0"

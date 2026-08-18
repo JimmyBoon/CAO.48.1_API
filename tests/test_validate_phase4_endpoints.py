@@ -215,14 +215,12 @@ _TWO_FDP_SEQUENCE = {
             "actual_duty_time_hours": 10.0,
             "local_time_offset_hours": 10.0,
             "sectors": 3,
-            "crosses_wocl": False,
         },
         {
             "event_type": "off_duty",
             "start_utc": "2026-03-25T08:00:00Z",
             "end_utc": "2026-03-25T22:00:00Z",
             "duration_hours": 14.0,
-            "includes_local_night": True,
             "location": "away",
         },
         {
@@ -233,7 +231,6 @@ _TWO_FDP_SEQUENCE = {
             "actual_duty_time_hours": 10.0,
             "local_time_offset_hours": 10.0,
             "sectors": 3,
-            "crosses_wocl": False,
         },
     ],
 }
@@ -284,7 +281,6 @@ class TestValidateSequenceEndpoint:
                             "actual_duty_time_hours": 18.0,
                             "local_time_offset_hours": 10.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                     ],
                 },
@@ -310,7 +306,6 @@ class TestValidateSequenceEndpoint:
                             "actual_duty_time_hours": 10.0,
                             "local_time_offset_hours": 10.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                     ],
                 },
@@ -329,14 +324,12 @@ class TestValidateSequenceEndpoint:
             "actual_duty_time_hours": 8.0,
             "local_time_offset_hours": 10.0,
             "sectors": 2,
-            "crosses_wocl": True,
         }
         short_odp = lambda d: {
             "event_type": "off_duty",
             "start_utc": f"2026-03-{d:02d}T21:00:00Z",
             "end_utc": f"2026-03-{d+1:02d}T07:00:00Z",
             "duration_hours": 10.0,
-            "includes_local_night": False,
             "location": "away",
         }
         events = [
@@ -344,6 +337,48 @@ class TestValidateSequenceEndpoint:
             wocl_fdp(23), short_odp(23),
             wocl_fdp(24), short_odp(24),
             wocl_fdp(25),  # 4th
+        ]
+        async with AsyncClient(transport=transport, base_url=BASE) as client:
+            resp = await client.post(
+                f"{PREFIX}/validate/sequence",
+                json={"appendix": "3", "events": events},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        violation_checks = [v["check"] for v in data["violations"]]
+        assert any("wocl_local_night_required" in vc for vc in violation_checks)
+
+    @pytest.mark.anyio
+    async def test_removed_fields_are_silently_ignored_not_rejected(self, transport):
+        """
+        crosses_wocl and includes_local_night were removed from the off_duty/fdp
+        event schemas (both are now always computed server-side). A caller still
+        sending them — including lying in the caller's favour — must get a 200
+        with the correct, derived result, not a 422 and not a bypassed check.
+        """
+        wocl_fdp = lambda d: {
+            "event_type": "fdp",
+            "fdp_start_utc": f"2026-03-{d:02d}T13:00:00Z",
+            "fdp_end_utc": f"2026-03-{d:02d}T21:00:00Z",
+            "actual_flight_time_hours": 5.0,
+            "actual_duty_time_hours": 8.0,
+            "local_time_offset_hours": 10.0,
+            "sectors": 2,
+            "crosses_wocl": False,  # lie: this FDP genuinely crosses WOCL
+        }
+        short_odp = lambda d: {
+            "event_type": "off_duty",
+            "start_utc": f"2026-03-{d:02d}T21:00:00Z",
+            "end_utc": f"2026-03-{d+1:02d}T07:00:00Z",
+            "duration_hours": 10.0,
+            "location": "away",
+            "includes_local_night": True,  # lie: this ODP does not span a full local night
+        }
+        events = [
+            wocl_fdp(22), short_odp(22),
+            wocl_fdp(23), short_odp(23),
+            wocl_fdp(24), short_odp(24),
+            wocl_fdp(25),
         ]
         async with AsyncClient(transport=transport, base_url=BASE) as client:
             resp = await client.post(

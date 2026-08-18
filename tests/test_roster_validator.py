@@ -146,22 +146,22 @@ class TestRestDayEvent:
 
 class TestSequenceLevel:
     def test_wocl_132_triggers_sequence_violation(self):
-        """4 consecutive WOCL FDPs without a local-night ODP → §13.2 violation."""
+        """4 consecutive WOCL FDPs (early 0400-local sign-ons) with 18h ODPs
+        that each end at 0400 local — short of the 0500 needed to fully span
+        the §6.1 2200-0500 local night — so none qualify as an intervening
+        local night and the 4th FDP should trigger a §13.2 violation."""
         events = []
         for i in range(4):
-            events.append(
-                _fdp(f"2026-03-{20+i:02d}T02:00:00Z",
-                     f"2026-03-{20+i:02d}T08:00:00Z",
-                     crosses_wocl=True)
-            )
+            fdp_start = f"2026-03-{19+i:02d}T20:00:00Z"  # local 0400
+            fdp_end = f"2026-03-{20+i:02d}T02:00:00Z"     # local 1000
+            events.append(_fdp(fdp_start, fdp_end, crosses_wocl=True))
             if i < 3:
-                # Short ODP with no local night
+                # 1000 local -> 0400 local next day: ends before 0500, so it
+                # does NOT fully span a local night.
                 events.append(
-                    _odp(f"2026-03-{20+i:02d}T08:00:00Z",
-                         f"2026-03-{20+i+1:02d}T02:00:00Z",
-                         duration_h=18.0, night=False)
+                    _odp(fdp_end, f"2026-03-{20+i:02d}T20:00:00Z", duration_h=18.0)
                 )
-        result = validate_roster("3", _dt("2026-03-20T00:00:00Z"), ROSTER_END, events)
+        result = validate_roster("3", _dt("2026-03-19T00:00:00Z"), ROSTER_END, events)
         assert result["summary"]["sequence_violations"] >= 1
         assert any("wocl" in v["check"] for v in result["sequence_violations"])
 
@@ -181,6 +181,102 @@ class TestSequenceLevel:
                          duration_h=18.0, night=False)
                 )
         result = validate_roster("3", _dt("2026-03-20T00:00:00Z"), ROSTER_END, events)
+        assert result["summary"]["sequence_violations"] == 0
+
+
+class TestCrossesWoclIsDerivedNotTrusted:
+    """
+    Regression tests for the silent-trust bug on crosses_wocl: a caller that
+    wrongly claims (or, per the aviation-toolbox integration, simply never
+    sends) crosses_wocl must not be able to disable the §13.2 check — it is
+    always derived from fdp_start_utc/fdp_end_utc/local_time_offset_hours.
+    """
+
+    def _fdp_dict(self, start, end, offset=8.0, claim_crosses_wocl=False,
+                  omit_crosses_wocl=False, acclimatisation=None):
+        event = {
+            "event_type": "fdp",
+            "fdp_start_utc": _dt(start),
+            "fdp_end_utc": _dt(end),
+            "actual_flight_time_hours": 3.5,
+            "actual_duty_time_hours": 6.0,
+            "local_time_offset_hours": offset,
+            "sectors": 2,
+        }
+        if not omit_crosses_wocl:
+            event["crosses_wocl"] = claim_crosses_wocl
+        if acclimatisation is not None:
+            event["acclimatisation"] = acclimatisation
+        return event
+
+    def test_violations_caught_even_when_caller_claims_no_wocl_crossing(self):
+        """Caller sets crosses_wocl=False on every FDP; all four actually
+        sign on at 0400 local (inside 0200-0559), so §13.2 must still fire."""
+        events = []
+        for i in range(4):
+            fdp_start = f"2026-03-{19+i:02d}T20:00:00Z"  # local 0400
+            fdp_end = f"2026-03-{20+i:02d}T02:00:00Z"     # local 1000
+            events.append(self._fdp_dict(fdp_start, fdp_end, claim_crosses_wocl=False))
+            if i < 3:
+                events.append(_odp(fdp_end, f"2026-03-{20+i:02d}T20:00:00Z", duration_h=18.0))
+        result = validate_roster("3", _dt("2026-03-19T00:00:00Z"), ROSTER_END, events)
+        assert result["summary"]["sequence_violations"] >= 1
+
+    def test_violations_caught_when_crosses_wocl_never_sent(self):
+        """Regression test for the aviation-toolbox bug: crosses_wocl absent
+        from every FDP event entirely — must not silently pass the roster."""
+        events = []
+        for i in range(4):
+            fdp_start = f"2026-03-{19+i:02d}T20:00:00Z"
+            fdp_end = f"2026-03-{20+i:02d}T02:00:00Z"
+            events.append(self._fdp_dict(fdp_start, fdp_end, omit_crosses_wocl=True))
+            if i < 3:
+                events.append(_odp(fdp_end, f"2026-03-{20+i:02d}T20:00:00Z", duration_h=18.0))
+        assert all("crosses_wocl" not in e for e in events if e["event_type"] == "fdp")
+        result = validate_roster("3", _dt("2026-03-19T00:00:00Z"), ROSTER_END, events)
+        assert result["summary"]["sequence_violations"] >= 1
+
+    def test_appendix_2_wocl_uses_acclimatised_offset(self):
+        """
+        §6.1(a): for Appendix 2, an acclimatised FCM's WOCL is assessed at the
+        acclimatised location, not the duty-commencement location.
+
+        Each FDP starts at UTC 20:00 — local 2000 at the commencement offset
+        (0h, not inside 0200-0559) but local 0200 at the acclimatised offset
+        (+6h). Only by using the acclimatised offset does this sequence cross
+        the WOCL at all, let alone four times running.
+        """
+        events = []
+        for i in range(4):
+            fdp_start = f"2026-03-{19+i:02d}T20:00:00Z"
+            fdp_end = f"2026-03-{20+i:02d}T02:00:00Z"
+            events.append(self._fdp_dict(
+                fdp_start, fdp_end, offset=0.0, claim_crosses_wocl=False,
+                acclimatisation={"state": "acclimatised", "acclimatised_time_offset_hours": 6.0},
+            ))
+            if i < 3:
+                events.append(_odp(fdp_end, f"2026-03-{20+i:02d}T20:00:00Z", duration_h=18.0))
+        result = validate_roster("2", _dt("2026-03-19T00:00:00Z"), ROSTER_END, events)
+        assert result["summary"]["sequence_violations"] >= 1
+
+    def test_appendix_3_ignores_acclimatisation_for_wocl(self):
+        """
+        Same instants and offsets as the acclimatised-offset test above, but
+        Appendix 3 has no acclimatisation concept (§6.1(b) uses the
+        commencement location only) — even with acclimatisation supplied, the
+        0h commencement offset never crosses the WOCL, so no violation.
+        """
+        events = []
+        for i in range(4):
+            fdp_start = f"2026-03-{19+i:02d}T20:00:00Z"
+            fdp_end = f"2026-03-{20+i:02d}T02:00:00Z"
+            events.append(self._fdp_dict(
+                fdp_start, fdp_end, offset=0.0, claim_crosses_wocl=False,
+                acclimatisation={"state": "acclimatised", "acclimatised_time_offset_hours": 6.0},
+            ))
+            if i < 3:
+                events.append(_odp(fdp_end, f"2026-03-{20+i:02d}T20:00:00Z", duration_h=18.0))
+        result = validate_roster("3", _dt("2026-03-19T00:00:00Z"), ROSTER_END, events)
         assert result["summary"]["sequence_violations"] == 0
 
 

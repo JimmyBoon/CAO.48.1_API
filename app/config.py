@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     app_name: str = "CAO 48.1 Compliance API"
-    app_version: str = "0.4.0"
+    app_version: str = "0.5.0"
     environment: str = "development"  # "development" | "production"
 
     # RapidAPI integration

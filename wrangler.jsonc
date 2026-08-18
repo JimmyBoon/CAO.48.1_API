@@ -29,7 +29,7 @@
     {
       "class_name": "CAO481Container",
       "image": "./Dockerfile",
-      "max_instances": 3
+      "max_instances": 5
     }
   ],
 

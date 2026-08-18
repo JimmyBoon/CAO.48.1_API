@@ -36,14 +36,12 @@ def _two_fdp_payload(appendix: str = "3") -> dict:
                 "actual_duty_time_hours": 10.0,
                 "local_time_offset_hours": 8.0,
                 "sectors": 3,
-                "crosses_wocl": False,
             },
             {
                 "event_type": "off_duty",
                 "start_utc": "2026-03-25T08:00:00Z",
                 "end_utc": "2026-03-25T22:00:00Z",
                 "duration_hours": 14.0,
-                "includes_local_night": True,
                 "location": "away",
             },
             {
@@ -54,7 +52,6 @@ def _two_fdp_payload(appendix: str = "3") -> dict:
                 "actual_duty_time_hours": 10.0,
                 "local_time_offset_hours": 8.0,
                 "sectors": 3,
-                "crosses_wocl": False,
             },
         ],
     }
@@ -109,6 +106,83 @@ class TestValidateRosterEndpoint:
         assert odp["valid"] is True
         assert odp["odp_number"] == 1
 
+    async def test_computed_crosses_wocl_and_includes_local_night_in_response(self, transport):
+        """
+        crosses_wocl (per FDP) and includes_local_night (per ODP) are no longer
+        request fields — confirm they're present as computed values on
+        fdp_results / odp_results instead, matching the events' real timestamps
+        (0900 local FDPs don't cross WOCL; the 14h off-duty period 2200-1200
+        local fully spans a local night).
+        """
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"{PREFIX}/validate/roster", json=_two_fdp_payload())
+        data = resp.json()
+        assert data["fdp_results"][0]["crosses_wocl"] is False
+        assert data["fdp_results"][1]["crosses_wocl"] is False
+        assert data["odp_results"][0]["includes_local_night"] is True
+
+    async def test_includes_local_night_boundary_ends_at_0500_is_true(self, transport):
+        """Off-duty period ending exactly 0500 local fully spans 2200-0500 (§6.1) —
+        the boundary is inclusive."""
+        payload = {
+            "appendix": "3",
+            "roster_start_utc": "2026-03-24T00:00:00Z",
+            "roster_end_utc": "2026-03-27T00:00:00Z",
+            "events": [
+                {
+                    "event_type": "fdp",
+                    "fdp_start_utc": "2026-03-24T22:00:00Z",  # local 0600
+                    "fdp_end_utc": "2026-03-25T05:00:00Z",     # local 1300
+                    "actual_flight_time_hours": 5.0,
+                    "actual_duty_time_hours": 7.0,
+                    "local_time_offset_hours": 8.0,
+                    "sectors": 2,
+                },
+                {
+                    "event_type": "off_duty",
+                    "start_utc": "2026-03-25T05:00:00Z",       # local 1300
+                    "end_utc": "2026-03-25T21:00:00Z",          # local 0500 next day
+                    "duration_hours": 16.0,
+                    "location": "away",
+                },
+            ],
+        }
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"{PREFIX}/validate/roster", json=payload)
+        data = resp.json()
+        assert data["odp_results"][0]["includes_local_night"] is True
+
+    async def test_includes_local_night_boundary_ends_at_0459_is_false(self, transport):
+        """Off-duty period ending one minute earlier, at 0459 local, falls one
+        minute short of fully spanning 2200-0500 — must not count."""
+        payload = {
+            "appendix": "3",
+            "roster_start_utc": "2026-03-24T00:00:00Z",
+            "roster_end_utc": "2026-03-27T00:00:00Z",
+            "events": [
+                {
+                    "event_type": "fdp",
+                    "fdp_start_utc": "2026-03-24T22:00:00Z",
+                    "fdp_end_utc": "2026-03-25T05:00:00Z",
+                    "actual_flight_time_hours": 5.0,
+                    "actual_duty_time_hours": 7.0,
+                    "local_time_offset_hours": 8.0,
+                    "sectors": 2,
+                },
+                {
+                    "event_type": "off_duty",
+                    "start_utc": "2026-03-25T05:00:00Z",
+                    "end_utc": "2026-03-25T20:59:00Z",          # local 0459 next day
+                    "duration_hours": 15.98,
+                    "location": "away",
+                },
+            ],
+        }
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(f"{PREFIX}/validate/roster", json=payload)
+        data = resp.json()
+        assert data["odp_results"][0]["includes_local_night"] is False
+
     async def test_fdp_violation_appears_in_response(self, transport):
         payload = {
             "appendix": "3",
@@ -123,7 +197,6 @@ class TestValidateRosterEndpoint:
                     "actual_duty_time_hours": 15.0,
                     "local_time_offset_hours": 8.0,
                     "sectors": 2,
-                    "crosses_wocl": False,
                 }
             ],
         }
@@ -149,14 +222,12 @@ class TestValidateRosterEndpoint:
                     "actual_duty_time_hours": 10.0,
                     "local_time_offset_hours": 8.0,
                     "sectors": 3,
-                    "crosses_wocl": False,
                 },
                 {
                     "event_type": "off_duty",
                     "start_utc": "2026-03-25T08:00:00Z",
                     "end_utc": "2026-03-25T16:00:00Z",
                     "duration_hours": 8.0,  # too short
-                    "includes_local_night": False,
                     "location": "away",
                 },
             ],
@@ -209,14 +280,12 @@ class TestValidateRosterEndpoint:
                     "actual_duty_time_hours": 10.0,
                     "local_time_offset_hours": 8.0,
                     "sectors": 3,
-                    "crosses_wocl": False,
                 },
                 {
                     "event_type": "rest_day",
                     "start_utc": "2026-03-25T10:00:00Z",
                     "end_utc": "2026-03-26T10:00:00Z",
                     "count": 1,
-                    "includes_local_night": True,
                 },
             ],
         }
@@ -257,7 +326,6 @@ class TestValidateRosterEndpoint:
                 "actual_duty_time_hours": 6.5,
                 "local_time_offset_hours": 0.0,
                 "sectors": 2,
-                "crosses_wocl": True,
             })
             if i < 3:
                 events.append({
@@ -265,7 +333,6 @@ class TestValidateRosterEndpoint:
                     "start_utc": f"2026-03-{20+i:02d}T08:00:00Z",
                     "end_utc": f"2026-03-{20+i+1:02d}T02:00:00Z",
                     "duration_hours": 18.0,
-                    "includes_local_night": False,
                     "following_includes_local_night": False,
                     "location": "away",
                 })
@@ -297,14 +364,12 @@ class TestValidateRosterEndpoint:
                     "actual_duty_time_hours": 15.0,
                     "local_time_offset_hours": 8.0,
                     "sectors": 2,
-                    "crosses_wocl": False,
                 },
                 {
                     "event_type": "off_duty",
                     "start_utc": "2026-03-24T22:00:00Z",
                     "end_utc": "2026-03-25T06:00:00Z",
                     "duration_hours": 8.0,  # too short
-                    "includes_local_night": False,
                     "location": "away",
                 },
             ],
@@ -328,7 +393,7 @@ class TestHealthAfterPhase5:
         data = resp.json()
         assert "/validate/roster" not in data["endpoints"]["planned"]
 
-    async def test_version_is_040(self, transport):
+    async def test_version_is_050(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get(f"{PREFIX}/health")
-        assert resp.json()["version"] == "0.4.0"
+        assert resp.json()["version"] == "0.5.0"

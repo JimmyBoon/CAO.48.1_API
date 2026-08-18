@@ -135,14 +135,16 @@ class TestWoclSection132:
 
     def test_4th_wocl_with_intervening_ln_passes(self):
         """4th consecutive WOCL WITH an intervening local night → §13.2 passed."""
-        # ODP between 3rd and 4th WOCL FDP includes a local night
+        # ODP between 3rd and 4th WOCL FDP is long enough (24h from local
+        # 0700) to fully span a 2200-0500 local night, so it qualifies —
+        # includes_night is derived from timestamps, not the (ignored) flag.
         events = [
             self._wocl_fdp("2026-03-22T13:00:00Z"),
             self._short_odp("2026-03-22T21:00:00Z", includes_night=False),
             self._wocl_fdp("2026-03-23T13:00:00Z"),
             self._short_odp("2026-03-23T21:00:00Z", includes_night=False),
             self._wocl_fdp("2026-03-24T13:00:00Z"),
-            self._short_odp("2026-03-24T21:00:00Z", includes_night=True),  # ← LN
+            self._short_odp("2026-03-24T21:00:00Z", duration=24.0, includes_night=True),  # ← LN
             self._wocl_fdp("2026-03-25T13:00:00Z"),
         ]
         result = validate_sequence(appendix="3", events=events)
@@ -163,6 +165,107 @@ class TestWoclSection132:
         result = validate_sequence(appendix="3", events=events)
         wocl_132_violations = [v for v in result["violations"] if "wocl_local_night_required" in v["check"]]
         assert wocl_132_violations == []
+
+
+class TestIncludesLocalNightIsDerivedNotTrusted:
+    """
+    Regression test for the silent-trust bug: includes_local_night on an
+    off_duty event must be derived from its own start_utc/end_utc/offset,
+    never taken at face value from the caller — otherwise a caller that
+    mis-computes the flag can mask a real §13.2 WOCL violation.
+
+    Fixture: 5-day Appendix 2 roster, home base WST (UTC+8), sign-ons at
+    0355/0400 with sign-offs 16-18h earlier — long rest, but every off-duty
+    period ends before 0500 so none of them actually span a local night.
+    """
+
+    def _roster_events(self, claim_local_night: bool, claim_crosses_wocl: bool = True,
+                        omit_crosses_wocl: bool = False):
+        # (fdp_start_utc, fdp_end_utc) per day, local sign-on/sign-off times
+        # 0400-1100, 0355-1000, 0355-1000, 0400-1200, 0400-1000 (UTC+8).
+        fdps = [
+            ("2026-08-15T20:00:00Z", "2026-08-16T03:00:00Z"),
+            ("2026-08-16T19:55:00Z", "2026-08-17T02:00:00Z"),
+            ("2026-08-17T19:55:00Z", "2026-08-18T02:00:00Z"),
+            ("2026-08-18T20:00:00Z", "2026-08-19T04:00:00Z"),
+            ("2026-08-19T20:00:00Z", "2026-08-20T02:00:00Z"),
+        ]
+        events = []
+        for i, (start, end) in enumerate(fdps):
+            fdp_event = {
+                "event_type": "fdp",
+                "fdp_start_utc": _utc(start),
+                "fdp_end_utc": _utc(end),
+                "actual_flight_time_hours": 3.5,
+                "actual_duty_time_hours": (_utc(end) - _utc(start)).total_seconds() / 3600,
+                "local_time_offset_hours": 8.0,
+                "sectors": 2,
+            }
+            if not omit_crosses_wocl:
+                fdp_event["crosses_wocl"] = claim_crosses_wocl
+            events.append(fdp_event)
+            if i < len(fdps) - 1:
+                odp_start = end
+                odp_end = fdps[i + 1][0]
+                events.append({
+                    "event_type": "off_duty",
+                    "start_utc": _utc(odp_start),
+                    "end_utc": _utc(odp_end),
+                    "duration_hours": (_utc(odp_end) - _utc(odp_start)).total_seconds() / 3600,
+                    "includes_local_night": claim_local_night,
+                    "location": "home_base",
+                })
+        return events
+
+    def test_wocl_violations_caught_even_when_caller_claims_local_night(self):
+        """
+        Caller wrongly sets includes_local_night=True on every ODP. Since
+        the flag is now derived (ignored), FDP4/FDP5 must still be flagged.
+        """
+        events = self._roster_events(claim_local_night=True)
+        result = validate_sequence(appendix="2", events=events)
+        assert result["valid"] is False
+        violation_checks = {v["check"] for v in result["violations"]}
+        assert "fdp4_wocl_local_night_required" in violation_checks
+        assert "fdp5_wocl_local_night_required" in violation_checks
+
+    def test_wocl_violations_caught_when_flag_omitted(self):
+        """Same roster with includes_local_night left False — same result."""
+        events = self._roster_events(claim_local_night=False)
+        result = validate_sequence(appendix="2", events=events)
+        assert result["valid"] is False
+        violation_checks = {v["check"] for v in result["violations"]}
+        assert "fdp4_wocl_local_night_required" in violation_checks
+        assert "fdp5_wocl_local_night_required" in violation_checks
+
+    def test_wocl_violations_caught_even_when_caller_claims_no_wocl_crossing(self):
+        """
+        Caller wrongly sets crosses_wocl=False on every FDP (all five actually
+        sign on at 0355/0400, squarely inside 0200-0559). Since the flag is
+        now derived (ignored), consecutive_wocl must still climb past 3 and
+        FDP4/FDP5 must still be flagged.
+        """
+        events = self._roster_events(claim_local_night=False, claim_crosses_wocl=False)
+        result = validate_sequence(appendix="2", events=events)
+        assert result["valid"] is False
+        violation_checks = {v["check"] for v in result["violations"]}
+        assert "fdp4_wocl_local_night_required" in violation_checks
+        assert "fdp5_wocl_local_night_required" in violation_checks
+
+    def test_wocl_violations_caught_when_crosses_wocl_never_sent(self):
+        """
+        Regression test for the aviation-toolbox integration bug: a caller
+        that never sends crosses_wocl at all (the field is simply absent from
+        every FDP event) must still get the same violations, not a silently
+        passing roster.
+        """
+        events = self._roster_events(claim_local_night=False, omit_crosses_wocl=True)
+        assert all("crosses_wocl" not in e for e in events if e["event_type"] == "fdp")
+        result = validate_sequence(appendix="2", events=events)
+        assert result["valid"] is False
+        violation_checks = {v["check"] for v in result["violations"]}
+        assert "fdp4_wocl_local_night_required" in violation_checks
+        assert "fdp5_wocl_local_night_required" in violation_checks
 
 
 class TestConsecutiveEarlyStartCountTracking:

@@ -18,7 +18,9 @@ from typing import Any, Optional
 
 from app.engines.cumulative_validator import validate_cumulative
 from app.engines.fdp_validator import validate_fdp
+from app.engines.local_night import contains_local_night
 from app.engines.off_duty_validator import validate_off_duty
+from app.engines.wocl import crosses_wocl as _derive_crosses_wocl
 from app.data.fdp_tables import FDP_CONFIGS
 from app.data.cumulative_limits import CUMULATIVE_CONFIGS
 
@@ -151,6 +153,10 @@ def validate_sequence(
     preceding_fdp_was_extended: bool = False
     preceding_fdp_extension_hours: float = 0.0
 
+    # Local offset of the most recently seen FDP, used to derive whether an
+    # off-duty period includes a local night from its own timestamps.
+    last_known_offset: Optional[float] = None
+
     # Counters for labelling purposes
     fdp_index: int = 0
     odp_index: int = 0
@@ -174,7 +180,6 @@ def validate_sequence(
                 duty_h    = event.actual_duty_time_hours
                 offset    = event.local_time_offset_hours
                 sectors   = event.sectors
-                crosses_wocl = event.crosses_wocl
             else:
                 fdp_start = _to_utc(event["fdp_start_utc"])
                 fdp_end   = _to_utc(event["fdp_end_utc"])
@@ -182,7 +187,14 @@ def validate_sequence(
                 duty_h    = event["actual_duty_time_hours"]
                 offset    = event["local_time_offset_hours"]
                 sectors   = event["sectors"]
-                crosses_wocl = event.get("crosses_wocl", False)
+
+            # Derived from the FDP's own timestamps (§6.1/§6.2) — a caller-supplied
+            # crosses_wocl value is never trusted, since it can't be cross-checked
+            # and silently disables the entire §13.2 consecutive-WOCL check.
+            crosses_wocl = _derive_crosses_wocl(fdp_start, fdp_end, offset)
+            notes.append(f"FDP {fdp_index}: crosses_wocl={crosses_wocl} (derived, not caller-supplied)")
+
+            last_known_offset = offset
 
             # ── §13.2 WOCL sequence check (before calling validate_fdp) ──
             if has_wocl_rules and crosses_wocl and consecutive_wocl >= 3:
@@ -265,12 +277,25 @@ def validate_sequence(
 
             if hasattr(event, "duration_hours"):
                 duration_h = event.duration_hours
-                includes_night = event.includes_local_night
+                odp_start = _to_utc(event.start_utc)
+                odp_end = _to_utc(event.end_utc)
                 location = event.location
             else:
                 duration_h = event["duration_hours"]
-                includes_night = event.get("includes_local_night", False)
+                odp_start = _to_utc(event["start_utc"])
+                odp_end = _to_utc(event["end_utc"])
                 location = event.get("location", "away")
+
+            # Derived from the ODP's own timestamps (§6.1) — a caller-supplied
+            # includes_local_night value is never trusted, since it can't be
+            # cross-checked and silently masks WOCL violations if wrong.
+            includes_night = (
+                contains_local_night(odp_start, odp_end, last_known_offset)
+                if last_known_offset is not None else False
+            )
+            notes.append(
+                f"ODP {odp_index}: includes_local_night={includes_night} (derived, not caller-supplied)"
+            )
 
             # Validate the ODP if we have a preceding FDP
             if preceding_fdp_hours is not None:

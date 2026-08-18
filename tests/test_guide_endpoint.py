@@ -120,4 +120,4 @@ class TestHealthAfterPhase6:
     async def test_version_is_040(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get(f"{PREFIX}/health")
-        assert resp.json()["version"] == "0.4.0"
+        assert resp.json()["version"] == "0.5.0"

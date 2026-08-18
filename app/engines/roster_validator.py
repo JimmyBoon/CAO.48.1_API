@@ -23,7 +23,9 @@ from typing import Any, Optional
 
 from app.engines.cumulative_validator import validate_cumulative
 from app.engines.fdp_validator import validate_fdp
+from app.engines.local_night import contains_local_night
 from app.engines.off_duty_validator import validate_off_duty
+from app.engines.wocl import crosses_wocl as _derive_crosses_wocl
 from app.data.cumulative_limits import CUMULATIVE_CONFIGS
 
 
@@ -116,6 +118,10 @@ def validate_roster(
     preceding_fdp_was_extended: bool = False
     preceding_fdp_extension_hours: float = 0.0
 
+    # Local offset of the most recently seen FDP, used to derive whether an
+    # off-duty period includes a local night from its own timestamps.
+    last_known_offset: Optional[float] = None
+
     # Accumulated results
     fdp_results: list[dict] = []
     odp_results: list[dict] = []
@@ -145,12 +151,28 @@ def validate_roster(
             duty_h       = _get(event, "actual_duty_time_hours", 0.0)
             offset       = _get(event, "local_time_offset_hours", 0.0)
             sectors      = _get(event, "sectors", 1)
-            crosses_wocl = _get(event, "crosses_wocl", False)
             extension    = _get(event, "extension", None)
             augmented    = _get(event, "augmented_crew", None)
             split_duty   = _get(event, "split_duty", None)
             accl         = _get(event, "acclimatisation", None)
             single_pilot = _get(event, "single_pilot", False)
+
+            # §6.1(a): for Appendix 2, an acclimatised FCM's WOCL is assessed at
+            # the acclimatised location, not necessarily where the duty commences.
+            accl_state = _get(accl, "state", "not_applicable")
+            accl_offset = _get(accl, "acclimatised_time_offset_hours", None)
+            wocl_offset = (
+                accl_offset
+                if appendix_upper == "2" and accl_state == "acclimatised" and accl_offset is not None
+                else offset
+            )
+
+            # Derived from the FDP's own timestamps (§6.1/§6.2) — a caller-supplied
+            # crosses_wocl value is never trusted, since it can't be cross-checked
+            # and silently disables the entire §13.2 consecutive-WOCL check.
+            crosses_wocl = _derive_crosses_wocl(fdp_start, fdp_end, wocl_offset)
+
+            last_known_offset = offset
 
             duration_h = (fdp_end - fdp_start).total_seconds() / 3600
 
@@ -238,6 +260,7 @@ def validate_roster(
                 "fdp_start_utc": fdp_start,
                 "fdp_end_utc": fdp_end,
                 "duration_hours": round(duration_h, 4),
+                "crosses_wocl": crosses_wocl,
                 "valid": len(fdp_item_violations) == 0,
                 "violations": fdp_item_violations,
                 "checks": fdp_item_checks,
@@ -279,9 +302,16 @@ def validate_roster(
             odp_start       = _to_utc(_get(event, "start_utc"))
             odp_end         = _to_utc(_get(event, "end_utc"))
             duration_h      = _get(event, "duration_hours", 0.0)
-            includes_night  = _get(event, "includes_local_night", False)
             following_night = _get(event, "following_includes_local_night", True)
             location        = _get(event, "location", "away")
+
+            # Derived from the ODP's own timestamps (§6.1) — a caller-supplied
+            # includes_local_night value is never trusted, since it can't be
+            # cross-checked and silently masks WOCL violations if wrong.
+            includes_night = (
+                contains_local_night(odp_start, odp_end, last_known_offset)
+                if last_known_offset is not None else False
+            )
 
             odp_item_violations: list[dict] = []
             odp_item_checks: list[dict] = []
@@ -309,6 +339,7 @@ def validate_roster(
                 "start_utc": odp_start,
                 "end_utc": odp_end,
                 "duration_hours": round(duration_h, 4),
+                "includes_local_night": includes_night,
                 "valid": len(odp_item_violations) == 0,
                 "violations": odp_item_violations,
                 "checks": odp_item_checks,
