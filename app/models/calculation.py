@@ -315,8 +315,37 @@ class MinOffDutyRequest(BaseModel):
     )
     acclimatisation_state: AcclimState = Field(
         default="not_applicable",
-        description="Acclimatisation state (for displacement time calculation under Appendix 2).",
+        description=(
+            "Acclimatisation state. Under Appendix 2 an unknown state selects "
+            "§10.1(c) / §10.2(b), which ignore home base / away, and blocks the "
+            "§10.4 reduction via §10.4(c)."
+        ),
     )
+    fdp_start_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset at the location where the preceding FDP started. "
+            "Supply with odp_start_offset_hours to compute displacement time "
+            "(Appendices 2, 4, 4B)."
+        ),
+    )
+    odp_start_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset at the location where the off-duty period starts. "
+            "Supply with fdp_start_offset_hours to compute displacement time."
+        ),
+    )
+
+    @field_validator("fdp_start_offset_hours")
+    @classmethod
+    def _check_fdp_offset(cls, v):
+        return validate_utc_offset(v, "fdp_start_offset_hours")
+
+    @field_validator("odp_start_offset_hours")
+    @classmethod
+    def _check_odp_offset(cls, v):
+        return validate_utc_offset(v, "odp_start_offset_hours")
 
     model_config = {
         "json_schema_extra": {
@@ -345,18 +374,81 @@ class MinOffDutyRequest(BaseModel):
 
 # ─── Response models ──────────────────────────────────────────────────
 
+class ConditionResult(BaseModel):
+    """One condition attached to a reduction provision."""
+    clause: str = Field(description="Clause reference for this specific condition.")
+    description: str = Field(description="What the condition requires.")
+
+
 class ReductionApplicable(BaseModel):
-    """Whether an ODP reduction is eligible and its details."""
-    eligible: bool = Field(description="Whether conditions for reduction are met.")
-    clause: Optional[str] = Field(default=None, description="Clause reference for the reduction.")
-    conditions_met: list[str] = Field(
-        default_factory=list,
-        description="Conditions that were evaluated for reduction eligibility.",
+    """
+    Whether an ODP reduction is available, and on what basis.
+
+    Conditions are split by whether the API can check them. Only
+    `conditions_verified` decides `eligible`: a concession is never granted on
+    the strength of a fact the API cannot see. `conditions_caller_must_verify`
+    lists what the caller must still establish before relying on the reduction.
+    """
+    eligible: bool = Field(
+        description=(
+            "True when every condition the API can check is satisfied. This is "
+            "not on its own authority to apply the reduction — any entry in "
+            "conditions_caller_must_verify must also hold."
+        ),
     )
+    clause: Optional[str] = Field(default=None, description="Clause reference for the reduction.")
     reduced_min_odp_hours: Optional[float] = Field(
         default=None,
-        description="Reduced minimum ODP if eligible (hours).",
+        description="Reduced minimum ODP if eligible (hours). Null when not eligible.",
     )
+    conditions_verified: list[ConditionResult] = Field(
+        default_factory=list,
+        description="Conditions the API checked against supplied data and found satisfied.",
+    )
+    conditions_failed: list[ConditionResult] = Field(
+        default_factory=list,
+        description="Conditions the API checked and found not satisfied.",
+    )
+    conditions_caller_must_verify: list[ConditionResult] = Field(
+        default_factory=list,
+        description=(
+            "Conditions the API cannot check from supplied data. Never counted "
+            "toward eligibility."
+        ),
+    )
+    reason: str = Field(
+        default="",
+        description="Human-readable summary of the eligibility outcome.",
+    )
+    conditions_met: list[str] = Field(
+        default_factory=list,
+        description=(
+            "DEPRECATED — use conditions_verified. Contains verified conditions "
+            "only; a condition the caller must verify never appears here."
+        ),
+    )
+
+
+class DisplacementResult(BaseModel):
+    """Displacement time contribution to the minimum ODP (Appendices 2, 4, 4B)."""
+    applicable: bool = Field(description="Whether this appendix applies displacement time.")
+    status: Literal["computed", "data_unavailable", "not_applicable"] = Field(
+        description=(
+            "'computed' when derived from supplied offsets; 'data_unavailable' "
+            "when the offsets were not supplied, in which case the returned "
+            "minimum is a lower bound and may be understated."
+        ),
+    )
+    displacement_hours: Optional[float] = Field(
+        default=None, description="Magnitude of the time-zone shift (hours).",
+    )
+    direction: Optional[str] = Field(
+        default=None, description="'east', 'west', or 'none'.",
+    )
+    added_hours: float = Field(
+        default=0.0, description="Hours added to the base minimum ODP.",
+    )
+    detail: str = Field(default="", description="Human-readable explanation.")
 
 
 class MinOffDutyResponse(BaseModel):
@@ -384,12 +476,21 @@ class MinOffDutyResponse(BaseModel):
     effective_duration_for_calc_hours: float = Field(
         description="Net FDP+duty duration used after split duty credit.",
     )
+    displacement: Optional[DisplacementResult] = Field(
+        default=None,
+        description="Displacement time contribution (Appendices 2, 4, 4B only).",
+    )
     reduction_applicable: Optional[ReductionApplicable] = Field(
         default=None,
-        description="Reduction eligibility details, if checked.",
+        description="Reduction eligibility details, if a reduction provision applies.",
     )
     final_min_odp_hours: float = Field(
-        description="Final minimum off-duty period after all adjustments.",
+        description=(
+            "The minimum off-duty period required. This is the UNREDUCED "
+            "minimum: reduction provisions are permissions the caller claims, "
+            "not defaults the API applies. Where a reduction is available it "
+            "appears in reduction_applicable."
+        ),
     )
     calculation_notes: list[str] = Field(
         default_factory=list,

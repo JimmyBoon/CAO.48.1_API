@@ -163,6 +163,8 @@ async def validate_off_duty_endpoint(
             following_includes_local_night=request.following_off_duty_includes_local_night,
             acclimatisation_state=request.acclimatisation_state,
             reduction_claimed=request.reduction_claimed,
+            fdp_start_offset_hours=request.fdp_start_offset_hours,
+            odp_start_offset_hours=request.odp_start_offset_hours,
         )
     except ValueError as exc:
         return JSONResponse(

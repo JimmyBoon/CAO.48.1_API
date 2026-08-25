@@ -11,6 +11,7 @@ from app.engines.fdp_calculator import calculate_max_fdp
 from app.engines.off_duty_calculator import calculate_min_off_duty
 from app.models.calculation import (
     Adjustment,
+    DisplacementResult,
     MaxFdpRequest,
     MaxFdpResponse,
     MinOffDutyRequest,
@@ -113,11 +114,17 @@ async def calc_min_off_duty(request: MinOffDutyRequest) -> MinOffDutyResponse:
         ),
         following_includes_local_night=request.following_off_duty_includes_local_night,
         acclimatisation_state=request.acclimatisation_state,
+        fdp_start_offset_hours=request.fdp_start_offset_hours,
+        odp_start_offset_hours=request.odp_start_offset_hours,
     )
 
     reduction = None
     if result["reduction_applicable"]:
         reduction = ReductionApplicable(**result["reduction_applicable"])
+
+    displacement = None
+    if result.get("displacement"):
+        displacement = DisplacementResult(**result["displacement"])
 
     return MinOffDutyResponse(
         appendix=result["appendix"],
@@ -128,6 +135,7 @@ async def calc_min_off_duty(request: MinOffDutyRequest) -> MinOffDutyResponse:
         split_duty_credit_hours=result["split_duty_credit_hours"],
         split_duty_credit_clause=result["split_duty_credit_clause"],
         effective_duration_for_calc_hours=result["effective_duration_for_calc_hours"],
+        displacement=displacement,
         reduction_applicable=reduction,
         final_min_odp_hours=result["final_min_odp_hours"],
         calculation_notes=result["calculation_notes"],

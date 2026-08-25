@@ -258,6 +258,20 @@ class ValidateOffDutyRequest(BaseModel):
         default=True,
         description="Whether the off-duty period includes a local night.",
     )
+    fdp_start_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset where the preceding FDP started. Supply with "
+            "odp_start_offset_hours to compute displacement time (App 2, 4, 4B)."
+        ),
+    )
+    odp_start_offset_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "UTC offset where the off-duty period starts. Supply with "
+            "fdp_start_offset_hours to compute displacement time."
+        ),
+    )
     acclimatisation_state: AcclimState = Field(
         default="not_applicable",
         description="Acclimatisation state (for displacement time calculation under Appendix 2).",

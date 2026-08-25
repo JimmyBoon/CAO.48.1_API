@@ -30,6 +30,8 @@ def validate_off_duty(
     following_includes_local_night: bool = True,
     acclimatisation_state: str = "not_applicable",
     reduction_claimed: bool = False,
+    fdp_start_offset_hours: float | None = None,
+    odp_start_offset_hours: float | None = None,
 ) -> dict:
     """
     Validate an off-duty period against all applicable CAO 48.1 rules.
@@ -56,6 +58,8 @@ def validate_off_duty(
         preceding_odp_included_night=preceding_odp_included_night,
         following_includes_local_night=following_includes_local_night,
         acclimatisation_state=acclimatisation_state,
+        fdp_start_offset_hours=fdp_start_offset_hours,
+        odp_start_offset_hours=odp_start_offset_hours,
     )
 
     checks: list[dict] = []
@@ -91,12 +95,34 @@ def validate_off_duty(
             })
 
     # ─── Check 1: ODP meets minimum ───────────────────────────────────
-    min_odp = limits["final_min_odp_hours"]
+    # Which minimum applies depends on whether the caller claimed a reduction.
+    # The provisions read "may be reduced ... provided that": absent a claim,
+    # the unreduced figure governs. Applying the concession regardless of
+    # `reduction_claimed` is what let a 15.0h requirement validate against 14.0h.
+    reduction = limits["reduction_applicable"]
+    base_min = limits["final_min_odp_hours"]
+    min_odp = base_min
+    limit_clause = limits["clause"]
+
+    if reduction_claimed and reduction is not None and reduction["eligible"]:
+        min_odp = reduction["reduced_min_odp_hours"]
+        limit_clause = reduction["clause"]
+        notes_suffix = (
+            f"Reduction {reduction['clause']} claimed: validating against "
+            f"{min_odp}h rather than the unreduced {base_min}h."
+        )
+        limits["calculation_notes"].append(notes_suffix)
+    elif reduction_claimed:
+        limits["calculation_notes"].append(
+            "Reduction claimed but not available — validating against the "
+            f"unreduced minimum of {base_min}h."
+        )
+
     odp_passed = actual_off_duty_hours >= min_odp
     _add_check(
         check_id="odp_meets_minimum",
         passed=odp_passed,
-        clause=limits["clause"],
+        clause=limit_clause,
         actual=actual_off_duty_hours,
         limit=min_odp,
         detail=(
@@ -113,8 +139,6 @@ def validate_off_duty(
 
     # ─── Check 2: Reduction conditions met (if reduction claimed) ─────
     if reduction_claimed:
-        reduction = limits["reduction_applicable"]
-
         if reduction is None:
             # Appendix has no reduction provisions at all
             red_passed = False
@@ -127,19 +151,20 @@ def validate_off_duty(
             limit_val = None
         else:
             red_passed = reduction["eligible"]
-            conditions = (
-                "; ".join(reduction["conditions_met"])
-                if reduction["conditions_met"]
-                else "Conditions not met"
-            )
-            detail = (
-                f"Reduction to {reduction.get('reduced_min_odp_hours')}h "
-                f"{'eligible' if red_passed else 'not eligible'}: {conditions}"
-            )
+            outstanding = reduction["conditions_caller_must_verify"]
+            detail = reduction["reason"]
+            if red_passed and outstanding:
+                detail += " Outstanding: " + "; ".join(
+                    f"{item['clause']} {item['description']}" for item in outstanding
+                )
             remediation = (
                 "" if red_passed else
                 "Ensure all eligibility conditions for the reduction provision "
-                "are satisfied before applying a reduced ODP."
+                "are satisfied before applying a reduced ODP: "
+                + "; ".join(
+                    f"{item['clause']} {item['description']}"
+                    for item in reduction["conditions_failed"]
+                )
             )
             clause = reduction.get("clause") or config.clause
             limit_val = reduction.get("reduced_min_odp_hours") if red_passed else None

@@ -2,8 +2,9 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 296 passing (26 added in Phase 1);
-no pre-existing test required modification.
+**Baseline:** 270 tests passing before any change. **Now:** 351 passing — 26 added in
+Phase 1, 55 in Phase 2 (14 of them pins written before the Phase 2 edits). One pre-existing
+test was amended, because it asserted the defect.
 
 ---
 
@@ -115,24 +116,54 @@ ordered with non-overlapping FDPs.
 range check was added *alongside* it inside the engine instead, so a caller reaching the
 engines directly cannot bypass it.
 
-### Phase 2 — S3, S4, S15 (one code path: `off_duty_calculator.py`)
+### Phase 2 — S3, S4, S15 — **COMPLETE**
 
-- **S3:** thread `reduction_claimed` into the calculator. `final_min_odp_hours` becomes the
-  **unreduced** minimum always; the reduction moves to `reduction_applicable` as an available
-  option. `/validate/off-duty` validates against the base unless the reduction is claimed.
-- **S4:** branch `_calc_home_away_displacement` on `acclimatisation_state` — §10.1(c) and
-  §10.2(b) for unknown state, ignoring home-base/away entirely. Add `fdp_start_offset_hours`
-  and `odp_start_offset_hours` and compute displacement as their difference (west >3h /
-  east >2h excess for acclimatised crew, full amount for unknown state).
-- **S15:** split the Appendix 2 and Appendix 3 condition sets. Add §10.4(c) to Appendix 2,
-  evaluated against `acclimatisation_state`; `unknown` makes the reduction ineligible.
+Reduction conditions became structured data in `app/data/off_duty_rules.py` (the C3
+verified/asserted split, applied locally), each carrying its own clause. Appendix 2 and
+Appendix 3 now own separate condition sets rather than sharing one tuple.
+
+- **S3 done.** `final_min_odp_hours` is always the unreduced minimum; the reduction is
+  reported in `reduction_applicable` as an option. `/validate/off-duty` validates against the
+  base unless `reduction_claimed` is set. `conditions_met` survives as a deprecated alias
+  carrying verified conditions only, so no `caller must verify` string can appear in it.
+- **S4 done.** `acclimatisation_state` now selects §10.1(c) / §10.2(b) for an unknown state,
+  ignoring home base / away. `fdp_start_offset_hours` and `odp_start_offset_hours` compute
+  displacement — west >3h / east >2h excess when acclimatised, the full amount when unknown.
+  Appendix 4 was checked against the served text and deliberately does **not** branch on
+  acclimatisation: §8.1 there is away/home only, with displacement.
+- **S15 done.** §10.4(c) added and evaluated against `acclimatisation_state`; an unknown
+  state makes the reduction ineligible with §10.4(c) named. The citation is §10.4, not §10.5.
   Appendix 3 §8.4 keeps its three conditions.
 
-*Sequencing note:* do S3 first — it establishes the verified/asserted split (C3) that S15
-then populates.
+**Also fixed: the §8.3 / §10.3 duty-total gate — not in the spec, and the largest single
+error found in this remediation.** Both clauses open "Despite subclause X.1, if the sum of
+an FCM's FDP ... does not exceed 10 hours". That gate was never implemented, and the
+provision displaces X.1 only — it can never reach a minimum derived from X.2. A 14h FDP
+requiring 15.0h under §8.2 was being reduced to **9.0h**: a six-hour under-rest, twice the
+size of S4's. Now gated, so the same case correctly routes to §8.4 → 14.0h.
 
-*Do not regress:* `/calculate/min-off-duty`'s §3.2 credit and §3.4(c) exclusion match the
-published worked examples. Pin them with tests **before** touching this file.
+**Also fixed: Appendix 2 §10.3(b).** The same asymmetry as §10.4(c), on the 9h provision —
+App 2 §10.3 has five conditions to Appendix 3 §8.3's four, the extra one being
+acclimatisation. The spec flagged only §10.4(c); both came from the same shared tuple.
+
+*Knock-on effect worth knowing:* `/validate/sequence` and `/validate/roster` call
+`validate_off_duty` without `reduction_claimed`, so roster ODPs are now validated against
+the unreduced minimum. A roster that previously passed on an auto-applied reduction now
+fails. That is the intended direction, but it will change results for existing callers.
+
+*One existing test encoded the bug*, as the plan anticipated:
+`test_reduction_to_9h_eligible` asserted `final_min_odp_hours == 9.0`, i.e. that the API
+applied §8.3 unbidden. Amended, with the reasoning recorded in the test.
+
+*Confirmed not regressed:* the §3.2 credit and §3.4(c) exclusion were pinned in
+`tests/test_odp_confirmed_correct.py` before this file was touched. All 14 pins still pass.
+
+**Deferred, deliberately:** `following_off_duty_location` is accepted by
+`/calculate/min-off-duty` and `/validate/off-duty` and never read — the location branch is
+driven by `preceding_fdp.location`, which the schema describes as "where the off-duty period
+will be taken". Two fields mean one thing and only one is wired. This is an §8.1
+parameter-contract violation rather than a calculation error, and disentangling it changes
+which field drives every existing caller's result, so it belongs with the Phase 5 sweep.
 
 ### Phase 3 — S5, S6, S7, S12
 

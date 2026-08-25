@@ -77,7 +77,17 @@ class TestAppendix3:
         assert result["effective_duration_for_calc_hours"] == 8.0  # 10 - 2
 
     def test_reduction_to_9h_eligible(self):
-        """Reduction to 9h with all conditions met."""
+        """
+        Reduction to 9h available when every checkable condition is met.
+
+        Amended in Phase 2 (S3): this previously asserted
+        final_min_odp_hours == 9.0, i.e. that the API applied the §8.3
+        reduction on its own initiative. §8.3 says the ODP "may be reduced
+        ... provided that", and one of its conditions (§8.3(d)) concerns a
+        period that has not happened yet. The reduction is now offered, not
+        applied — final_min_odp_hours stays at the unreduced minimum until
+        the caller claims it via reduction_claimed.
+        """
         result = calculate_min_off_duty(
             appendix="3",
             preceding_fdp_duration_hours=10.0,
@@ -89,7 +99,7 @@ class TestAppendix3:
         assert result["reduction_applicable"] is not None
         assert result["reduction_applicable"]["eligible"] is True
         assert result["reduction_applicable"]["reduced_min_odp_hours"] == 9.0
-        assert result["final_min_odp_hours"] == 9.0
+        assert result["final_min_odp_hours"] == 10.0
 
     def test_reduction_not_eligible_home_base(self):
         """Reduction to 9h not eligible at home base."""
