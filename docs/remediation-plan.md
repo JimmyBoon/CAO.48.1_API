@@ -2,10 +2,13 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 565 passing — 26 added in
-Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4, 90 in Phase 5. Sixty-odd of those are
-pins written before the edits they protect. Five pre-existing tests were amended across
-Phases 2 and 5, each because it asserted a defect.
+**Baseline:** 270 tests passing before any change. **Now:** 593 passing — 26 added in
+Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4, 90 in Phase 5, 27 in Phase 6. Sixty-odd
+of those are pins written before the edits they protect. Five pre-existing tests were amended
+across Phases 2 and 5, each because it asserted a defect.
+
+**All six phases of §1 are complete.** What remains is §7 — the untested appendices and rule
+areas — with Appendix 4 the spec's stated priority.
 
 ---
 
@@ -349,17 +352,47 @@ compliance — it does not count empty space as days off, and does not report fi
 block that was never there. It reports honestly that it could not tell, and leaves the
 significance of that to the caller.
 
-### Phase 6 — S14, S17
+### Phase 6 — S14, S17 — **COMPLETE**
 
-- **S17 is much cheaper than the spec assumed.** The clause text is already served and correct;
-  the corpus is simply missing `###` markers on six headings. Adding them to `cao481.md` gives
-  each clause its own `section_id` through the existing parser with no re-chunking and no alias
-  layer. Verify each affected appendix's section list for gaps afterwards.
-- **S14:** generate `/guide` parameter documentation from the running Pydantic models. Keep
-  `when_to_use` and `common_mistakes` hand-written, but add a contract test asserting every
-  parameter named in the guide exists on the corresponding request model and vice versa.
-  Fix the `'appendix-3'` instruction in `common_mistakes` — it actively teaches the wrong format.
-  Leave the `/validate/sequence` and `/validate/roster` entries alone; they are current.
+- **S17 done, and cheaper than the spec assumed.** No re-chunking and no alias layer: the
+  clause text was already served and correct, and the parser splits on `###`. **Seven** headings
+  were missing the marker — the spec listed six; Appendix 4A §3 was the one it missed. Adding
+  them gives each clause its own `section_id` through the existing parser.
+  `GET /sections/APPENDIX 3.3` now returns the split-duty text, and no appendix has a gap in
+  its section numbering. (Part 1 still shows no sections 2 or 3 — that is faithful to the
+  instrument, not a chunking artefact, and the test scopes itself to appendices accordingly.)
+
+  *Note for maintainers:* the corpus exists twice — `cao481.md` at the repo root and
+  `app/data/cao481.md`, which is the one actually served. They were byte-identical and both
+  were updated, but two copies of the legislative text is a drift hazard worth collapsing.
+
+- **S14 done, and taken further than the spec asked.** Parameter documentation is generated
+  from the running request models by `app/data/guide_params.py`; each POST entry now names a
+  `request_model` instead of carrying a hand-written list. Worked examples come from the
+  models' own schema examples, so the guide shows the same payload as the OpenAPI docs —
+  three of the hand-written ones had drifted far enough to return 422.
+
+  **Response shapes had drifted just as far**, which the spec did not flag: `/calculate/max-fdp`
+  advertised `max_fdp_hours`, `time_band`, `crosses_wocl` and `is_early_start` — none of which
+  the response has ever contained — while omitting every field it does return. Six endpoints
+  were affected. `example_response_shape` is now generated from each route's declared
+  `response_model`.
+
+  **Appendix capability flags are now derived, not asserted.** `has_wocl_rules` was False for
+  Appendix 6, which does have consecutive WOCL and early-start limits (§10) — a second instance
+  of the defect the spec caught on Appendix 4B. Both flags now come from `FDP_CONFIGS`, and a
+  new `has_night_operation_limits` is derived from the corpus itself, which correctly picks up
+  Appendix 4B §8.
+
+  Hand-written prose (`purpose`, `when_to_use`, `common_mistakes`) stays hand-written and is
+  held to account by `tests/test_guide_contract.py`: every parameter name appearing in prose
+  must exist on a real model, every `example_request` must execute against its own endpoint,
+  every documented response key must appear in the live response, and no retired name
+  (`local_start_time_of_day_hours`, `augmented_crew_size`, `preceding_fdp_hours`,
+  `split_duty_rest_hours`, `not_acclimatised`) may reappear. The `'appendix-3'` instruction is
+  corrected — the wrong format may now appear only inside an explicit warning.
+
+  The `/validate/sequence` and `/validate/roster` prose was left alone, as the spec directed.
 
 ### Phase 7 — coverage
 

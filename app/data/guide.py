@@ -4,9 +4,123 @@ Guide data for the GET /guide endpoint.
 Structured documentation for every endpoint in the CAO 48.1 Compliance API,
 designed to be fetched once by an LLM or integration at the start of a session.
 
-Version field is intentionally left as a placeholder — the route handler
-overwrites it with settings.app_version at runtime.
+**Parameter documentation is generated, not written here.** Each POST entry
+names its `request_model`; `build_guide()` expands that into a `parameters`
+list from the running Pydantic model. Hand-maintained parameter prose is what
+drifted: the guide went on describing `local_start_time_of_day_hours`, a
+boolean `augmented_crew`, a string `extension`, and an
+`acclimatisation: "not_acclimatised"` enum value long after the API stopped
+accepting any of them, so a caller following the guide got a 422.
+
+What stays hand-written is the prose that cannot be derived from a type:
+`purpose`, `when_to_use`, `when_not_to_use`, `common_mistakes`, and the worked
+examples. `tests/test_guide_contract.py` holds those to account — every
+parameter named in the prose must exist on the model, and every
+`example_request` must execute successfully against its own endpoint.
+
+The version field is a placeholder; the route handler overwrites it with
+settings.app_version at runtime.
 """
+
+from __future__ import annotations
+
+from typing import Any
+
+_REQUEST_MODELS: dict[str, Any] = {}
+
+
+def _request_models() -> dict[str, Any]:
+    """Resolve request-model names lazily to avoid a circular import."""
+    if not _REQUEST_MODELS:
+        from app.models import calculation, validation
+
+        for module in (calculation, validation):
+            for name in dir(module):
+                obj = getattr(module, name)
+                if isinstance(obj, type) and name.endswith("Request"):
+                    _REQUEST_MODELS[name] = obj
+    return _REQUEST_MODELS
+
+
+def build_guide(version: str | None = None) -> dict:
+    """
+    Return the guide with `parameters` generated from the request models.
+
+    Endpoints that name a `request_model` get their parameter list built from
+    that model, so the guide cannot describe a field the API does not accept,
+    nor omit one it requires.
+    """
+    import copy
+
+    from app.data.guide_params import describe_model
+
+    guide = copy.deepcopy(GUIDE)
+    if version is not None:
+        guide["version"] = version
+
+    # Capability flags are derived from the rule tables and the corpus, not
+    # asserted by hand. has_wocl_rules was False for Appendix 6, which does
+    # have consecutive WOCL and early-start limits (§10), and Appendix 4B was
+    # flagged as having no night rules at all when it has §8.
+    from app.data.fdp_tables import FDP_CONFIGS
+    from app.parser import get_legislation
+
+    legislation = get_legislation()
+    for entry in guide["appendices"]:
+        config = FDP_CONFIGS.get(entry["id"])
+        if config is None:
+            continue
+        entry["has_wocl_rules"] = bool(
+            config.wocl_early_start and config.early_starts.available
+        )
+        entry["has_augmented_crew"] = "augmented_acclimatised" in config.tables
+        group = legislation.group_index.get(f"APPENDIX {entry['id']}")
+        night = [
+            section.id for section in (group.sections if group else [])
+            if "late-night" in section.title.lower()
+        ]
+        entry["has_night_operation_limits"] = bool(night)
+        if night:
+            entry["night_operation_limits_section"] = night[0]
+
+    from app.data.guide_params import response_shape
+
+    # Response models come from the routes themselves, so the documented shape
+    # is whatever FastAPI actually returns.
+    from app.main import app as _app
+
+    response_models: dict[tuple[str, str], Any] = {}
+    for route in _app.routes:
+        model = getattr(route, "response_model", None)
+        if model is None or not hasattr(model, "model_fields"):
+            continue
+        path = route.path.replace(guide["api_base_path"], "")
+        for method in getattr(route, "methods", set()):
+            response_models[(method, path)] = model
+
+    models = _request_models()
+    for endpoint in guide["endpoints"]:
+        model = response_models.get((endpoint["method"], endpoint["path"]))
+        if model is not None:
+            endpoint["example_response_shape"] = response_shape(model)
+            endpoint["response_generated_from"] = model.__name__
+        model_name = endpoint.get("request_model")
+        if not model_name:
+            endpoint.setdefault("parameters", [])
+            continue
+        model = models[model_name]
+        endpoint["parameters"] = describe_model(model)
+        endpoint["parameters_generated_from"] = model_name
+
+        # The worked example comes from the model's own schema example, so it
+        # is the same payload the OpenAPI docs show and cannot drift from what
+        # the endpoint accepts. Three of the hand-written ones had already
+        # drifted far enough to 422.
+        examples = (model.model_config.get("json_schema_extra") or {}).get("examples")
+        if examples:
+            endpoint["example_request"] = examples[0]
+    return guide
+
 
 GUIDE: dict = {
     "title": "CAO 48.1 Compliance API — Integration Guide",
@@ -51,9 +165,12 @@ GUIDE: dict = {
             "has_wocl_rules": True,
             "has_augmented_crew": True,
             "note": (
-                "Has sub-tables for acclimatised / not_acclimatised crew and 3-pilot / 4-pilot "
-                "augmented operations. Supply acclimatisation and augmented_crew / augmented_crew_size "
-                "to select the correct table."
+                "Has sub-tables for acclimatised and unknown-acclimatisation crew, each "
+                "with an augmented-crew variant. Supply `acclimatisation` (an object: "
+                "{state, acclimatised_time_offset_hours}) and, for augmented operations, "
+                "`augmented_crew` (an object: {additional_fcms, rest_facility_class, "
+                "in_flight_rest_hours_per_fcm}) to select the correct table. The §5.3 "
+                "conditions gate the augmented tables — see /validate/fdp."
             ),
         },
         {
@@ -168,7 +285,7 @@ GUIDE: dict = {
             "parameters": [],
             "example_response_shape": {
                 "status": "ok",
-                "version": "0.3.0",
+                "version": "0.5.0",
                 "endpoints": {
                     "available": ["/health", "/validate/fdp", "..."],
                     "planned": [],
@@ -192,10 +309,15 @@ GUIDE: dict = {
             "example_response_shape": {
                 "groups": [
                     {
-                        "id": "appendices",
-                        "title": "Appendices",
+                        "id": "APPENDIX 3",
+                        "title": "MULTI-PILOT OPERATIONS EXCEPT COMPLEX",
+                        "type": "appendix",
                         "sections": [
-                            {"id": "appendix-3", "title": "Appendix 3 — Multi-Pilot Operations Except Complex", "type": "appendix"}
+                            {
+                                "id": "APPENDIX 3.2",
+                                "section_number": "2",
+                                "title": "FDP and flight time limits",
+                            }
                         ],
                     }
                 ]
@@ -217,19 +339,28 @@ GUIDE: dict = {
                     "type": "string",
                     "required": True,
                     "description": (
-                        "Section ID from GET /sections (e.g. 'appendix-3', 'section-13'). "
+                        "Section ID exactly as GET /sections returns it — e.g. 'APPENDIX 3' "
+                    "for a whole appendix, 'APPENDIX 3.3' for a clause, or '13' "
+                    "for a numbered section of the CAO itself. "
                         "Not the same as the appendix number — use GET /sections first."
                     ),
                 }
             ],
-            "example_request": {"path": "/sections/appendix-3"},
+            "example_request": {"path": "/sections/APPENDIX 3.3"},
             "example_response_shape": {
-                "id": "appendix-3",
-                "title": "Appendix 3 — Multi-Pilot Operations Except Complex",
-                "content": "...(legislative text)...",
+                "section_id": "APPENDIX 3.3",
+                "title": "Increase in FDP limits by split duty",
+                "section_number": "3",
+                "parent_id": "APPENDIX 3",
+                "parent_title": "MULTI-PILOT OPERATIONS EXCEPT COMPLEX",
+                "text": "3.1 Subject to subclause 3.4, where an FDP contains a "
+                        "split-duty rest period of at least 4 consecutive hours ...",
+                "disclaimer": "This output is derived from Civil Aviation Order "
+                              "48.1 Instrument 2019 ...",
             },
             "common_mistakes": [
-                "Using a bare appendix number like '3' instead of 'appendix-3' — "
+                "Lower-casing or hyphenating the id — 'appendix-3' is NOT accepted; "
+                "use 'APPENDIX 3' exactly as GET /sections returns it. "
                 "call GET /sections first to get the correct IDs."
             ],
         },
@@ -262,14 +393,19 @@ GUIDE: dict = {
             "example_request": {"path": "/limits/fdp-table/3"},
             "example_response_shape": {
                 "appendix": "3",
-                "title": "Multi-Pilot Operations Except Complex",
-                "tables": {
-                    "standard": {
-                        "table_id": "app3_standard",
-                        "rows": [{"time_band": "0600-0659", "sectors": {"1-2": 9.5, "3": 9.0, "4+": 8.5}}],
+                "table_id": "Table 2.1",
+                "lookup_key": "local_time_and_sectors",
+                "flight_time_limit_hours": 10.5,
+                "rows": [
+                    {
+                        "time_band": "0000-0459",
+                        "sectors": {"1-3": 10.0, "4": 9.5, "5": 9.0,
+                                    "6": 8.5, "7": 8.0, "8+": 7.5},
                     }
-                },
-                "split_duty": {"available": True},
+                ],
+                "split_duty_cap_hours": 16.0,
+                "post_split_max_hours": 6.0,
+                "notes": "",
             },
             "common_mistakes": [
                 "Reading the table directly to determine a limit without calling /calculate/max-fdp — "
@@ -301,7 +437,13 @@ GUIDE: dict = {
             ],
             "example_response_shape": {
                 "appendix": "3",
-                "flight_time": {"days_28": 100.0, "days_90": 300.0, "days_365": 1000.0},
+                "flight_time": {
+                    "period_28d_hours": 100.0,
+                    "period_365d_hours": 1000.0,
+                    "period_168h_hours": None,
+                    "period_90d_hours": None,
+                    "period_384h_hours": None,
+                },
                 "duty_time": {"days_28": 200.0},
             },
             "common_mistakes": [],
@@ -322,69 +464,7 @@ GUIDE: dict = {
                 "Combine with POST /validate/fdp on completion to check actual compliance."
             ),
             "when_not_to_use": "This returns a limit, not a pass/fail result — use /validate/fdp for that.",
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "local_start_time_of_day_hours",
-                    "type": "number",
-                    "required": True,
-                    "description": (
-                        "LOCAL time of FDP start as decimal hours from midnight (0.0–23.99). "
-                        "NOT the UTC time. Example: FDP starts 22:00 UTC, offset +8 → local = 06:00 → supply 6.0. "
-                        "This determines which time band row the FDP falls into."
-                    ),
-                },
-                {
-                    "name": "sectors",
-                    "type": "integer",
-                    "required": True,
-                    "description": "Number of sectors (takeoff-to-landing segments) in the FDP.",
-                },
-                {
-                    "name": "acclimatisation",
-                    "type": "string",
-                    "required": False,
-                    "description": (
-                        "Crew acclimatisation state — only meaningful for Appendix 2. "
-                        "'acclimatised': crew has been at departure station ≥3 days. "
-                        "'not_acclimatised': <3 days. "
-                        "'unknown': API applies the conservative not_acclimatised limits."
-                    ),
-                    "valid_values": ["acclimatised", "not_acclimatised", "unknown"],
-                    "default": "unknown",
-                },
-                {
-                    "name": "augmented_crew",
-                    "type": "boolean",
-                    "required": False,
-                    "description": (
-                        "True if a relief crew member is carried (3- or 4-pilot augmented operation). "
-                        "For Appendix 2 only. When True, also supply augmented_crew_size ('3' or '4')."
-                    ),
-                    "default": False,
-                },
-                {
-                    "name": "split_duty_rest_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": (
-                        "Duration of the in-FDP rest break if split duty applies (hours). "
-                        "The API computes the FDP extension from this, subject to type and cap rules."
-                    ),
-                },
-                {
-                    "name": "split_duty_facility",
-                    "type": "string",
-                    "required": False,
-                    "description": "Type of rest facility during the split-duty break.",
-                    "valid_values": ["sleeping", "resting"],
-                },
-            ],
+            "request_model": "MaxFdpRequest",
             "example_request": {
                 "appendix": "3",
                 "local_start_time_of_day_hours": 6.0,
@@ -400,8 +480,13 @@ GUIDE: dict = {
                 "notes": [],
             },
             "common_mistakes": [
-                "Supplying UTC time instead of LOCAL time for local_start_time_of_day_hours. "
-                "Convert: local_hours = (utc_start_hour + local_offset) % 24.",
+                "Supplying a local wall-clock time instead of a UTC instant. The API takes "
+                "`fdp_start_utc` (a UTC ISO 8601 timestamp) plus "
+                "`local_time_offset_hours`, and derives local time itself. "
+                "The API does the conversion: it reads fdp_start_utc and applies "
+                "local_time_offset_hours to get the local time of day for the "
+                "table lookup. Offsets outside [-12, +14] are rejected with a "
+                "422 rather than wrapped.",
                 "Omitting augmented_crew=True for 3- or 4-pilot operations — the FDP limit is higher but "
                 "requires different table selection.",
                 "Using acclimatisation='unknown' when the crew is known to be acclimatised — "
@@ -419,30 +504,7 @@ GUIDE: dict = {
             ),
             "when_to_use": "After an FDP completes, to determine when crew may next commence duty.",
             "when_not_to_use": "For pass/fail validation of a known off-duty period, use /validate/off-duty.",
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "preceding_fdp_hours",
-                    "type": "number",
-                    "required": True,
-                    "description": "Actual duration of the preceding FDP in hours.",
-                },
-                {
-                    "name": "includes_local_night",
-                    "type": "boolean",
-                    "required": False,
-                    "description": (
-                        "True if the off-duty period will include a local night opportunity "
-                        "(local time crossing 0000-0559). Affects minimum rest in some appendices."
-                    ),
-                    "default": False,
-                },
-            ],
+            "request_model": "MinOffDutyRequest",
             "example_request": {
                 "appendix": "3",
                 "preceding_fdp_hours": 10.0,
@@ -472,125 +534,7 @@ GUIDE: dict = {
                 "extension restrictions), use /validate/sequence or /validate/roster — those track "
                 "state across FDPs."
             ),
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "fdp_start_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "FDP commencement time in UTC.",
-                },
-                {
-                    "name": "fdp_end_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "FDP end time in UTC.",
-                },
-                {
-                    "name": "local_time_offset_hours",
-                    "type": "number",
-                    "required": True,
-                    "description": (
-                        "Hours ahead of UTC at the departure station (e.g. AEST = 10.0, AEDT = 11.0, IST = 5.5). "
-                        "Used to determine the local start time of day for FDP table lookup."
-                    ),
-                },
-                {
-                    "name": "sectors",
-                    "type": "integer",
-                    "required": True,
-                    "description": "Number of sectors (takeoff-to-landing segments) in the FDP.",
-                },
-                {
-                    "name": "crosses_wocl",
-                    "type": "boolean",
-                    "required": True,
-                    "description": (
-                        "True if the FDP crosses the Window of Circadian Low (0200-0559 local time). "
-                        "Relevant for Appendix 2, 3, 4. Set this yourself based on local times — "
-                        "the API does not derive it from UTC, because DST and offset logic is your responsibility."
-                    ),
-                },
-                {
-                    "name": "actual_flight_time_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": "Actual block-to-block flight time in hours. If provided, checked against per-FDP flight time limit.",
-                },
-                {
-                    "name": "actual_duty_time_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": "Total duty time in hours (may exceed FDP if post-flight duty applies).",
-                },
-                {
-                    "name": "acclimatisation",
-                    "type": "string",
-                    "required": False,
-                    "description": "Crew acclimatisation state (Appendix 2 only). See /calculate/max-fdp for definition.",
-                    "valid_values": ["acclimatised", "not_acclimatised", "unknown"],
-                    "default": "unknown",
-                },
-                {
-                    "name": "augmented_crew",
-                    "type": "boolean",
-                    "required": False,
-                    "description": "True for 3- or 4-pilot augmented operations (Appendix 2 only).",
-                    "default": False,
-                },
-                {
-                    "name": "extension",
-                    "type": "string",
-                    "required": False,
-                    "description": (
-                        "Commander extension invoked. "
-                        "'captain_discretion' — pilot-in-command discretion under CAO 48.1. "
-                        "'approved_unforeseen' — operator-approved unforeseen circumstances extension."
-                    ),
-                    "valid_values": ["captain_discretion", "approved_unforeseen"],
-                },
-                {
-                    "name": "extension_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": "Amount of extension invoked in hours. Must be ≤ the applicable extension cap.",
-                },
-                {
-                    "name": "preceding_fdp_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": (
-                        "Actual duration of the immediately preceding FDP in hours. "
-                        "Required to validate the consecutive-extension restriction: "
-                        "if both this FDP and the preceding FDP are extended, tighter limits apply."
-                    ),
-                },
-                {
-                    "name": "preceding_fdp_was_extended",
-                    "type": "boolean",
-                    "required": False,
-                    "description": "True if the immediately preceding FDP was also extended.",
-                    "default": False,
-                },
-                {
-                    "name": "split_duty_rest_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": "Duration of the in-FDP rest break for split duty in hours.",
-                },
-                {
-                    "name": "split_duty_facility",
-                    "type": "string",
-                    "required": False,
-                    "description": "Type of rest facility.",
-                    "valid_values": ["sleeping", "resting"],
-                },
-            ],
+            "request_model": "ValidateFdpRequest",
             "example_request": {
                 "appendix": "3",
                 "fdp_start_utc": "2026-03-24T22:00:00Z",
@@ -613,7 +557,8 @@ GUIDE: dict = {
             "common_mistakes": [
                 "Setting crosses_wocl=False when the FDP runs overnight through 0200-0559 local — "
                 "derive this from the local start and end times before calling.",
-                "Omitting preceding_fdp_hours and preceding_fdp_was_extended when validating a "
+                "Omitting `preceding_fdp` (an object with start_utc, end_utc, duration_hours "
+                "and location) when validating a "
                 "second consecutive extended FDP — the consecutive-extension check will be skipped.",
                 "Supplying local_time_offset_hours without accounting for Daylight Saving Time.",
                 "Using appendix '2' for non-complex multi-pilot aircraft — use appendix '3'.",
@@ -634,58 +579,7 @@ GUIDE: dict = {
                 "For a sequence of FDPs, use /validate/sequence or /validate/roster — "
                 "they track context (preceding FDP duration) across events automatically."
             ),
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "start_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "Start of the off-duty period in UTC.",
-                },
-                {
-                    "name": "end_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "End of the off-duty period in UTC.",
-                },
-                {
-                    "name": "duration_hours",
-                    "type": "number",
-                    "required": True,
-                    "description": (
-                        "Actual duration in hours. Must be consistent with end_utc − start_utc. "
-                        "Both are required because the API validates their consistency."
-                    ),
-                },
-                {
-                    "name": "preceding_fdp_hours",
-                    "type": "number",
-                    "required": False,
-                    "description": "Duration of the FDP that preceded this off-duty period.",
-                },
-                {
-                    "name": "includes_local_night",
-                    "type": "boolean",
-                    "required": False,
-                    "description": (
-                        "True if this off-duty period includes a local night opportunity "
-                        "(0000-0559 local falls within the period). Affects qualified rest classification."
-                    ),
-                    "default": False,
-                },
-                {
-                    "name": "location",
-                    "type": "string",
-                    "required": False,
-                    "description": "Rest location type.",
-                    "valid_values": ["home_base", "suitable_accommodation", "away"],
-                },
-            ],
+            "request_model": "ValidateOffDutyRequest",
             "example_request": {
                 "appendix": "3",
                 "start_utc": "2026-03-25T08:00:00Z",
@@ -727,46 +621,7 @@ GUIDE: dict = {
                 "prefer /validate/roster if you are also validating FDP/ODP details."
             ),
             "when_not_to_use": "Not for individual FDP validation — use /validate/fdp for that.",
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "as_of_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": (
-                        "Reference date for rolling-window calculations. "
-                        "Typically today's date or the end of the period being checked. "
-                        "The 28-day window is as_of_utc − 28 days to as_of_utc, etc."
-                    ),
-                },
-                {
-                    "name": "fdp_log",
-                    "type": "array",
-                    "required": False,
-                    "description": (
-                        "List of historical FDP records to compute windows from. "
-                        "Include at least the past 365 days. "
-                        "Each record: fdp_start_utc, fdp_end_utc, actual_flight_time_hours, "
-                        "actual_duty_time_hours, local_time_offset_hours. "
-                        "Either fdp_log or summary must be provided."
-                    ),
-                },
-                {
-                    "name": "summary",
-                    "type": "object",
-                    "required": False,
-                    "description": (
-                        "Pre-aggregated cumulative totals (alternative to fdp_log). "
-                        "Fields: flight_time_28d, flight_time_90d, flight_time_365d, duty_time_28d. "
-                        "Use when you have pre-computed totals rather than individual FDP records."
-                    ),
-                },
-            ],
+            "request_model": "ValidateCumulativeRequest",
             "example_request": {
                 "appendix": "3",
                 "as_of_utc": "2026-03-29T00:00:00Z",
@@ -783,8 +638,10 @@ GUIDE: dict = {
             "example_response_shape": {
                 "valid": True,
                 "appendix": "3",
-                "limits": {"flight_time_28d": 100.0, "flight_time_90d": 300.0, "flight_time_365d": 1000.0},
-                "totals": {"flight_time_28d": 7.5, "flight_time_90d": 7.5, "flight_time_365d": 7.5},
+                "limits": {"flight_time_28d": 100.0, "flight_time_365d": 1000.0,
+                           "duty_time_168h": 60.0, "duty_time_336h": 100.0},
+                "totals": {"flight_time_28d": 7.5, "flight_time_365d": 7.5,
+                           "duty_time_168h": 10.0, "duty_time_336h": 10.0},
                 "checks": [{"check": "flight_time_28d", "passed": True, "rule": "CAO 48.1 §..."}],
                 "violations": [],
             },
@@ -812,34 +669,7 @@ GUIDE: dict = {
                 "If you also need cumulative rolling-window limits checked, use /validate/roster. "
                 "For a single FDP, /validate/fdp is simpler."
             ),
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "events",
-                    "type": "array",
-                    "required": True,
-                    "description": (
-                        "Chronological list of events. Discriminated by event_type. "
-                        "FDP events (event_type='fdp'): fdp_start_utc, fdp_end_utc, "
-                        "local_time_offset_hours, sectors, actual_flight_time_hours, "
-                        "actual_duty_time_hours. ODP events (event_type='off_duty'): "
-                        "start_utc, end_utc, duration_hours, location. Events must be in "
-                        "chronological order. Do not omit ODPs between FDPs — the origin "
-                        "derives whether each FDP infringes the WOCL and whether each ODP "
-                        "includes a local night purely from timestamps and offsets, so a "
-                        "missing ODP breaks the §13.2 consecutive-WOCL sequence. There is no "
-                        "crosses_wocl or includes_local_night input field — neither is "
-                        "accepted; both are always computed server-side and surfaced in "
-                        "calculation_notes (e.g. 'FDP 2: crosses_wocl=True (derived, not "
-                        "caller-supplied)')."
-                    ),
-                },
-            ],
+            "request_model": "ValidateSequenceRequest",
             "example_request": {
                 "appendix": "3",
                 "events": [
@@ -898,69 +728,7 @@ GUIDE: dict = {
                 "A single FDP in isolation → use /validate/fdp. "
                 "Standalone cumulative tracking without FDP details → use /validate/cumulative."
             ),
-            "parameters": [
-                {
-                    "name": "appendix",
-                    "type": "string",
-                    "required": True,
-                    "description": "Appendix ID.",
-                },
-                {
-                    "name": "roster_start_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "Start of the roster period in UTC.",
-                },
-                {
-                    "name": "roster_end_utc",
-                    "type": "string (ISO 8601 UTC)",
-                    "required": True,
-                    "description": "End of the roster period in UTC.",
-                },
-                {
-                    "name": "events",
-                    "type": "array",
-                    "required": True,
-                    "description": (
-                        "Chronological list of events. Three event_type values are supported: "
-                        "'fdp' — same fields as /validate/fdp; "
-                        "'off_duty' — same fields as /validate/sequence ODP events, plus "
-                        "following_includes_local_night (still caller-supplied — used only for "
-                        "the §10.4 reduced-ODP eligibility check, not for §13.2); "
-                        "'rest_day' — start_utc, end_utc, count (integer ≥1), includes_local_night. "
-                        "Rest days reset the consecutive early-start and WOCL counters when "
-                        "count ≥ 2 or (count ≥ 1 and includes_local_night is True). "
-                        "'fdp' events have no crosses_wocl field and 'off_duty' events have no "
-                        "includes_local_night field — neither is accepted as input; both are "
-                        "always computed server-side from each event's own timestamps and offset "
-                        "and returned on the corresponding fdp_results / odp_results item "
-                        "(crosses_wocl, includes_local_night respectively). Only rest_day's "
-                        "includes_local_night remains caller-supplied, since a rest day is defined "
-                        "by a day count rather than a single offset period. Minimum 1 event."
-                    ),
-                },
-                {
-                    "name": "prior_fdp_log",
-                    "type": "array",
-                    "required": False,
-                    "description": (
-                        "FDP records from before this roster period, for accurate cumulative window calculations. "
-                        "Include at least the past 365 days. "
-                        "If omitted, the cumulative check only sees FDPs within this roster period — "
-                        "prior usage is invisible to the validator."
-                    ),
-                },
-                {
-                    "name": "prior_summary",
-                    "type": "object",
-                    "required": False,
-                    "description": (
-                        "Pre-aggregated prior cumulative totals (alternative to prior_fdp_log). "
-                        "Fields: flight_time_28d, flight_time_90d, flight_time_365d, duty_time_28d. "
-                        "Use when individual prior FDP records are not available."
-                    ),
-                },
-            ],
+            "request_model": "ValidateRosterRequest",
             "example_request": {
                 "appendix": "3",
                 "roster_start_utc": "2026-03-24T00:00:00Z",
@@ -1059,7 +827,7 @@ GUIDE: dict = {
             "parameters": [],
             "example_response_shape": {
                 "title": "CAO 48.1 Compliance API — Integration Guide",
-                "version": "0.3.0",
+                "version": "0.5.0",
                 "endpoints": ["..."],
             },
             "common_mistakes": [],

@@ -8,7 +8,7 @@ worked examples, and common mistakes — for LLM and integration consumption.
 from fastapi import APIRouter
 
 from app.config import settings
-from app.data.guide import GUIDE
+from app.data.guide import build_guide
 
 router = APIRouter(tags=["Guide"])
 
@@ -29,4 +29,6 @@ router = APIRouter(tags=["Guide"])
     },
 )
 async def get_guide() -> dict:
-    return {**GUIDE, "version": settings.app_version}
+    # Parameters are generated from the running request models, so the guide
+    # cannot describe a field the API does not accept.
+    return build_guide(version=settings.app_version)
