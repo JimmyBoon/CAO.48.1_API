@@ -442,13 +442,6 @@ class SequenceFdpEvent(BaseModel):
         description="UTC offset at the departure point (hours). Used to determine early-start status."
     )
     sectors: int = Field(ge=1, description="Number of sectors (flights) in this FDP.")
-    crosses_wocl: bool = Field(
-        default=False,
-        description=(
-            "True if this FDP includes any operation during the WOCL "
-            "(0200–0559 local time). Used to track consecutive WOCL infringements."
-        ),
-    )
 
 
 class SequenceOdpEvent(BaseModel):
@@ -459,14 +452,6 @@ class SequenceOdpEvent(BaseModel):
     end_utc: datetime = Field(description="End of off-duty period (ISO 8601 UTC).")
     duration_hours: float = Field(
         ge=0, description="Duration of the off-duty period (hours)."
-    )
-    includes_local_night: bool = Field(
-        default=False,
-        description=(
-            "True if this off-duty period includes a local night "
-            "(a period of 8 consecutive hours including 0100–0559 local time). "
-            "Used for recovery block and WOCL-infringement reset checks."
-        ),
     )
     location: Location = Field(
         default="away",
@@ -507,14 +492,12 @@ class ValidateSequenceRequest(BaseModel):
                             "actual_duty_time_hours": 10.0,
                             "local_time_offset_hours": 8.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                         {
                             "event_type": "off_duty",
                             "start_utc": "2026-03-25T08:00:00Z",
                             "end_utc": "2026-03-25T22:00:00Z",
                             "duration_hours": 14.0,
-                            "includes_local_night": True,
                             "location": "away",
                         },
                         {
@@ -525,7 +508,6 @@ class ValidateSequenceRequest(BaseModel):
                             "actual_duty_time_hours": 10.0,
                             "local_time_offset_hours": 8.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                     ],
                 }
@@ -554,10 +536,6 @@ class RosterFdpEvent(BaseModel):
         description="UTC offset at the departure point (hours)."
     )
     sectors: int = Field(ge=1, description="Number of sectors (flights) in this FDP.")
-    crosses_wocl: bool = Field(
-        default=False,
-        description="True if this FDP includes operation during the WOCL (0200–0559 local).",
-    )
     extension: Optional[ExtensionInput] = Field(
         default=None,
         description="Extension applied to this FDP, if any.",
@@ -588,13 +566,6 @@ class RosterOdpEvent(BaseModel):
     end_utc: datetime = Field(description="End of off-duty period (ISO 8601 UTC).")
     duration_hours: float = Field(
         ge=0, description="Duration of the off-duty period (hours)."
-    )
-    includes_local_night: bool = Field(
-        default=False,
-        description=(
-            "True if this off-duty period includes a local night "
-            "(a period of 8 consecutive hours including 0100–0559 local time)."
-        ),
     )
     following_includes_local_night: bool = Field(
         default=True,
@@ -635,6 +606,14 @@ class FdpValidationItem(BaseModel):
     fdp_start_utc: datetime = Field(description="FDP start time.")
     fdp_end_utc: datetime = Field(description="FDP end time.")
     duration_hours: float = Field(description="FDP duration (hours).")
+    crosses_wocl: bool = Field(
+        description=(
+            "Computed, not caller-supplied. True if this FDP infringes the WOCL "
+            "(§6.1/§6.2: any operation during 0200–0559 local time), derived from "
+            "fdp_start_utc, fdp_end_utc, local_time_offset_hours and "
+            "acclimatisation. Used for consecutive-WOCL tracking (§13.2)."
+        ),
+    )
     valid: bool = Field(description="True if no violations were found for this FDP.")
     violations: list[Violation] = Field(default_factory=list)
     checks: list[CheckResult] = Field(default_factory=list)
@@ -649,6 +628,15 @@ class OdpValidationItem(BaseModel):
     start_utc: datetime = Field(description="Off-duty period start time.")
     end_utc: datetime = Field(description="Off-duty period end time.")
     duration_hours: float = Field(description="Off-duty period duration (hours).")
+    includes_local_night: bool = Field(
+        description=(
+            "Computed, not caller-supplied. True if this off-duty period includes "
+            "a local night (§6.1: 8 consecutive hours including 2200–0500 local "
+            "time), derived from start_utc, end_utc and the surrounding FDPs' "
+            "local_time_offset_hours. Used for recovery-block and "
+            "WOCL-infringement-reset checks (§13.2)."
+        ),
+    )
     valid: bool = Field(description="True if no violations were found for this ODP.")
     violations: list[Violation] = Field(default_factory=list)
     checks: list[CheckResult] = Field(default_factory=list)
@@ -715,14 +703,12 @@ class ValidateRosterRequest(BaseModel):
                             "actual_duty_time_hours": 10.0,
                             "local_time_offset_hours": 8.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                         {
                             "event_type": "off_duty",
                             "start_utc": "2026-03-25T08:00:00Z",
                             "end_utc": "2026-03-25T22:00:00Z",
                             "duration_hours": 14.0,
-                            "includes_local_night": True,
                             "location": "away",
                         },
                         {
@@ -733,7 +719,6 @@ class ValidateRosterRequest(BaseModel):
                             "actual_duty_time_hours": 10.0,
                             "local_time_offset_hours": 8.0,
                             "sectors": 3,
-                            "crosses_wocl": False,
                         },
                         {
                             "event_type": "rest_day",

@@ -825,11 +825,18 @@ GUIDE: dict = {
                     "required": True,
                     "description": (
                         "Chronological list of events. Discriminated by event_type. "
-                        "FDP events (event_type='fdp'): same fields as POST /validate/fdp. "
-                        "ODP events (event_type='off_duty'): start_utc, end_utc, duration_hours, "
-                        "includes_local_night, following_includes_local_night, location. "
-                        "Events must be in chronological order. Do not omit ODPs between FDPs — "
-                        "WOCL reset logic depends on includes_local_night on each ODP."
+                        "FDP events (event_type='fdp'): fdp_start_utc, fdp_end_utc, "
+                        "local_time_offset_hours, sectors, actual_flight_time_hours, "
+                        "actual_duty_time_hours. ODP events (event_type='off_duty'): "
+                        "start_utc, end_utc, duration_hours, location. Events must be in "
+                        "chronological order. Do not omit ODPs between FDPs — the origin "
+                        "derives whether each FDP infringes the WOCL and whether each ODP "
+                        "includes a local night purely from timestamps and offsets, so a "
+                        "missing ODP breaks the §13.2 consecutive-WOCL sequence. There is no "
+                        "crosses_wocl or includes_local_night input field — neither is "
+                        "accepted; both are always computed server-side and surfaced in "
+                        "calculation_notes (e.g. 'FDP 2: crosses_wocl=True (derived, not "
+                        "caller-supplied)')."
                     ),
                 },
             ],
@@ -842,7 +849,6 @@ GUIDE: dict = {
                         "fdp_end_utc": "2026-03-25T08:00:00Z",
                         "local_time_offset_hours": 8.0,
                         "sectors": 3,
-                        "crosses_wocl": False,
                         "actual_flight_time_hours": 7.5,
                         "actual_duty_time_hours": 10.0,
                     },
@@ -851,8 +857,6 @@ GUIDE: dict = {
                         "start_utc": "2026-03-25T08:00:00Z",
                         "end_utc": "2026-03-25T22:00:00Z",
                         "duration_hours": 14.0,
-                        "includes_local_night": True,
-                        "following_includes_local_night": False,
                         "location": "away",
                     },
                 ],
@@ -860,17 +864,20 @@ GUIDE: dict = {
             "example_response_shape": {
                 "valid": True,
                 "appendix": "3",
-                "fdp_results": [{"fdp_number": 1, "valid": True, "violations": [], "checks": []}],
-                "odp_results": [{"odp_number": 1, "valid": True, "violations": []}],
-                "sequence_checks": [],
-                "sequence_violations": [],
+                "violations": [],
+                "checks": [{"check": "fdp1_fdp_within_limit", "passed": True, "clause": "CAO 48.1 Appendix 3"}],
                 "warnings": [],
+                "calculation_notes": [
+                    "FDP 1: crosses_wocl=False (derived, not caller-supplied)",
+                    "ODP 1: includes_local_night=True (derived, not caller-supplied)",
+                ],
             },
             "common_mistakes": [
                 "Omitting ODPs between FDPs — the §13.2 WOCL consecutive counter resets when an ODP "
-                "includes a local night, so skipping ODPs gives wrong consecutive WOCL counts.",
-                "Forgetting following_includes_local_night on ODP events — this field drives WOCL counter resets, "
-                "not includes_local_night alone.",
+                "spans a full local night, which the origin derives from the ODP's own timestamps, "
+                "so skipping ODPs gives wrong consecutive WOCL counts.",
+                "Assuming crosses_wocl or includes_local_night must be sent — neither is an "
+                "accepted field; both are computed server-side from timestamps.",
                 "Sending events out of chronological order — the validator processes them sequentially.",
             ],
         },
@@ -917,11 +924,19 @@ GUIDE: dict = {
                     "description": (
                         "Chronological list of events. Three event_type values are supported: "
                         "'fdp' — same fields as /validate/fdp; "
-                        "'off_duty' — same fields as /validate/sequence ODP events, plus following_includes_local_night; "
+                        "'off_duty' — same fields as /validate/sequence ODP events, plus "
+                        "following_includes_local_night (still caller-supplied — used only for "
+                        "the §10.4 reduced-ODP eligibility check, not for §13.2); "
                         "'rest_day' — start_utc, end_utc, count (integer ≥1), includes_local_night. "
                         "Rest days reset the consecutive early-start and WOCL counters when "
                         "count ≥ 2 or (count ≥ 1 and includes_local_night is True). "
-                        "Minimum 1 event."
+                        "'fdp' events have no crosses_wocl field and 'off_duty' events have no "
+                        "includes_local_night field — neither is accepted as input; both are "
+                        "always computed server-side from each event's own timestamps and offset "
+                        "and returned on the corresponding fdp_results / odp_results item "
+                        "(crosses_wocl, includes_local_night respectively). Only rest_day's "
+                        "includes_local_night remains caller-supplied, since a rest day is defined "
+                        "by a day count rather than a single offset period. Minimum 1 event."
                     ),
                 },
                 {
@@ -957,7 +972,6 @@ GUIDE: dict = {
                         "fdp_end_utc": "2026-03-25T08:00:00Z",
                         "local_time_offset_hours": 8.0,
                         "sectors": 3,
-                        "crosses_wocl": False,
                         "actual_flight_time_hours": 7.5,
                         "actual_duty_time_hours": 10.0,
                     },
@@ -966,7 +980,6 @@ GUIDE: dict = {
                         "start_utc": "2026-03-25T08:00:00Z",
                         "end_utc": "2026-03-25T22:00:00Z",
                         "duration_hours": 14.0,
-                        "includes_local_night": True,
                         "location": "away",
                     },
                     {
@@ -975,7 +988,6 @@ GUIDE: dict = {
                         "fdp_end_utc": "2026-03-26T08:00:00Z",
                         "local_time_offset_hours": 8.0,
                         "sectors": 3,
-                        "crosses_wocl": False,
                         "actual_flight_time_hours": 8.0,
                         "actual_duty_time_hours": 10.0,
                     },
@@ -1007,8 +1019,12 @@ GUIDE: dict = {
                     "cumulative_violations": 0,
                     "total_violations": 0,
                 },
-                "fdp_results": [{"fdp_number": 1, "valid": True, "violations": [], "checks": []}],
-                "odp_results": [{"odp_number": 1, "valid": True, "violations": []}],
+                "fdp_results": [
+                    {"fdp_number": 1, "crosses_wocl": False, "valid": True, "violations": [], "checks": []}
+                ],
+                "odp_results": [
+                    {"odp_number": 1, "includes_local_night": True, "valid": True, "violations": []}
+                ],
                 "sequence_checks": [],
                 "sequence_violations": [],
                 "cumulative_result": {"valid": True, "violations": []},
@@ -1022,8 +1038,10 @@ GUIDE: dict = {
                 "Sending an empty events list — at least one event is required.",
                 "Using prior_summary with zeros when actual prior history exists — undercounts usage "
                 "and gives a falsely passing cumulative result.",
-                "Setting crosses_wocl=False for an FDP that runs through 0200-0559 local — "
-                "derive this from local times before calling.",
+                "Assuming crosses_wocl or includes_local_night must be sent on 'fdp'/'off_duty' "
+                "events — neither is an accepted field; both are computed server-side from each "
+                "event's own timestamps and offset (and, for acclimatised Appendix 2 FDPs, "
+                "acclimatised_time_offset_hours) and returned in fdp_results / odp_results.",
             ],
         },
         # ── Guide ─────────────────────────────────────────────────────

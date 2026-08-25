@@ -69,14 +69,14 @@ export class CAO481Container extends Container {
  */
 function getRandomInstance(binding, poolSize) {
   const index = Math.floor(Math.random() * poolSize);
-  const id = binding.idFromName(`cao481-v7-${index}`);
+  const id = binding.idFromName(`cao481-v8-${index}`);
   return binding.get(id);
 }
 
 // ─── Number of stateless container instances in the pool ──────────────
 // For low traffic, 2 instances provides basic redundancy.
 // Increase for higher throughput.
-const POOL_SIZE = 2;
+const POOL_SIZE = 5;
 
 /**
  * Worker fetch handler — routes all requests to the container.
