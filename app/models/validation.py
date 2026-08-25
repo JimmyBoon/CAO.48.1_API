@@ -44,7 +44,23 @@ class CheckResult(BaseModel):
     """Result of a single compliance check."""
 
     check: str = Field(description="Check identifier.")
-    passed: bool = Field(description="Whether the check passed.")
+    passed: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True if the check passed, False if it failed, null if it could "
+            "not be evaluated. **null is not true** — see `status`. The field "
+            "remains present so existing consumers do not break, but a null "
+            "must never be read as compliance."
+        ),
+    )
+    status: Literal["passed", "failed", "data_unavailable"] = Field(
+        default="passed",
+        description=(
+            "'data_unavailable' means the API could not evaluate this "
+            "condition from the data supplied. It is neither a pass nor a "
+            "fail, and does not count toward a compliant verdict."
+        ),
+    )
     clause: str = Field(description="CAO 48.1 clause reference for this check.")
     actual: Optional[float] = Field(
         default=None,
@@ -84,13 +100,31 @@ class ValidationResponse(BaseModel):
     """
     Validation result showing all checks run and any violations found.
 
-    The top-level `valid` flag is False if any violations were detected.
-    All checks evaluated — including those that passed — are included in
-    the `checks` list for full auditability.
+    `valid` is True only when every check that ran passed AND no check had to
+    be skipped. A skipped check means the API could not establish compliance,
+    which is not the same as establishing it — reporting `valid: true` on an
+    incomplete assessment is the failure mode this API is being corrected for.
+
+    All checks evaluated — including those that passed — are included in the
+    `checks` list for full auditability.
     """
 
     valid: bool = Field(
-        description="True if no violations were found; False otherwise.",
+        description=(
+            "True only if every check that ran passed and none were skipped. "
+            "Read alongside checks_skipped: a response with skipped checks is "
+            "not a complete assessment."
+        ),
+    )
+    checks_run: int = Field(
+        default=0, description="Number of checks actually evaluated.",
+    )
+    checks_skipped: int = Field(
+        default=0,
+        description=(
+            "Number of checks that could not be evaluated from the supplied "
+            "data. Non-zero means this response is not a complete assessment."
+        ),
     )
     appendix: str = Field(description="Appendix used for validation.")
     violations: list[Violation] = Field(

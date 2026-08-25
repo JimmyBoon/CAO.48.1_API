@@ -48,9 +48,25 @@ class AcclimatisationInput(BaseModel):
 class InFlightRestEntry(BaseModel):
     """In-flight rest record for one FCM in an augmented crew."""
     fcm_id: str = Field(description="Identifier for the flight crew member.")
-    rest_hours: float = Field(description="Hours of in-flight rest taken.")
+    rest_hours: float = Field(
+        ge=0,
+        description=(
+            "Consecutive hours of in-flight rest. §5.3(d) and §5.3(g)(ii) both "
+            "require the rest to be *consecutive*, so a total accumulated "
+            "across several short breaks does not satisfy them."
+        ),
+    )
     at_controls_final_landing: bool = Field(
         description="Whether this FCM will be at the controls for the final landing.",
+    )
+    rest_within_8h_before_landing: Optional[bool] = Field(
+        default=None,
+        description=(
+            "For §5.3(f)(ii)(A): whether this FCM's 2 consecutive hours of "
+            "in-flight rest fell within the 8-hour period ending at the "
+            "scheduled time of the landing at the end of the second sector. "
+            "Only relevant on a 2-sector FDP exceeding 14 hours."
+        ),
     )
 
 
@@ -65,7 +81,21 @@ class AugmentedCrewInput(BaseModel):
     )
     in_flight_rest_hours_per_fcm: Optional[list[InFlightRestEntry]] = Field(
         default=None,
-        description="In-flight rest details per additional FCM.",
+        description=(
+            "In-flight rest details per FCM. Required to evaluate §5.3(d) and "
+            "§5.3(g)(ii). Where omitted, those conditions are reported as "
+            "data_unavailable — they are not treated as satisfied."
+        ),
+    )
+    second_sector_scheduled_flight_time_hours: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "For §5.3(f)(ii)(B): scheduled flight time of the second sector. "
+            "On a 2-sector FDP exceeding 14 hours, §5.3(f)(ii) is satisfied by "
+            "either this being at least 9 hours, or by the rest timing in "
+            "§5.3(f)(ii)(A)."
+        ),
     )
 
 

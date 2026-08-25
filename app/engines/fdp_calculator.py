@@ -10,6 +10,11 @@ All logic derived from CAO 48.1 Instrument 2019 (Compilation No. 3, F2021C01239)
 
 from datetime import datetime
 
+from app.engines.augmented_crew import (
+    augmented_flight_time_note,
+    check_sector_limit,
+    sector_ceiling,
+)
 from app.models._validators import validate_utc_offset
 from app.data.fdp_tables import (
     AppendixFdpConfig,
@@ -126,6 +131,47 @@ def calculate_max_fdp(
                 "running_total_hours": running_total,
             })
         post_split_max = sd_result.get("post_split_max")
+
+    # ─── Appendix 2 §5.3 sector ceiling ───────────────────────────
+    # §5.1/§5.2 permit the Table 5.1/5.2 limits "but only if the conditions in
+    # subclause 5.3 are met", and §5.3(f)(i)/(g)(i) drive the ceiling DOWN as
+    # sectors rise. Applied before a maximum is returned, not reported after.
+    if appendix == "2" and augmented_crew is not None:
+        sector_violation = check_sector_limit(sectors)
+        if sector_violation is not None:
+            violations.append(sector_violation)
+            notes.append(sector_violation["detail"])
+        else:
+            ceiling, ceiling_clause = sector_ceiling(sectors)
+            if ceiling is not None and running_total > ceiling:
+                reduction = running_total - ceiling
+                running_total = ceiling
+                adjustments.append({
+                    "clause": ceiling_clause,
+                    "description": (
+                        f"{sectors} sectors: maximum FDP capped at {ceiling}h "
+                        f"({ceiling_clause})"
+                    ),
+                    "adjustment_hours": -reduction,
+                    "running_total_hours": running_total,
+                })
+                notes.append(
+                    f"Augmented crew, {sectors} sectors: {ceiling_clause} caps "
+                    f"the FDP at {ceiling}h (from {running_total + reduction}h)."
+                )
+            else:
+                # An explicit zero, so "no sector cap applied" is auditable
+                # rather than merely absent.
+                adjustments.append({
+                    "clause": ceiling_clause,
+                    "description": (
+                        f"{sectors} sector(s): no sector-derived reduction "
+                        f"applies ({ceiling_clause})"
+                    ),
+                    "adjustment_hours": 0.0,
+                    "running_total_hours": running_total,
+                })
+        notes.append(augmented_flight_time_note())
 
     final_max = running_total
 

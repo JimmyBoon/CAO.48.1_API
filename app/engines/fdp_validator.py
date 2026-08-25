@@ -14,6 +14,7 @@ All logic derived from CAO 48.1 Instrument 2019 (Compilation No. 3, F2021C01239)
 from datetime import datetime
 
 from app.data.fdp_tables import FDP_CONFIGS
+from app.engines.augmented_crew import evaluate_conditions
 from app.engines.fdp_calculator import calculate_max_fdp, _extension_ceiling
 
 
@@ -66,17 +67,19 @@ def validate_fdp(
 
     def _add_check(
         check_id: str,
-        passed: bool,
+        passed: bool | None,
         clause: str,
         actual: float | None,
         limit: float | None,
         detail: str | None,
         severity: str = "hard_limit",
         remediation: str = "",
+        status: str | None = None,
     ) -> None:
         checks.append({
             "check": check_id,
             "passed": passed,
+            "status": status or ("passed" if passed else "failed"),
             "clause": clause,
             "actual": actual,
             "limit": limit,
@@ -196,13 +199,35 @@ def validate_fdp(
         checks.append({
             "check": calc_violation["check"],
             "passed": False,
+            "status": "failed",
             "clause": calc_violation["clause"],
             "actual": calc_violation["actual"],
             "limit": calc_violation["limit"],
             "detail": calc_violation["detail"],
         })
 
+    # ─── Appendix 2 §5.3 — augmented crew conditions ──────────────────
+    # §5.1/§5.2 permit the Table 5.1/5.2 limits "but only if the conditions in
+    # subclause 5.3 are met". Without this the tables were applied with none
+    # of their conditions evaluated.
+    augmented_conditions: list[dict] = []
+    if appendix == "2" and augmented_crew is not None:
+        assessment = evaluate_conditions(
+            augmented_crew, sectors, actual_fdp_hours,
+        )
+        checks.extend(assessment["checks"])
+        violations.extend(assessment["violations"])
+        augmented_conditions = assessment["conditions_caller_must_verify"]
+
     warnings: list[str] = []
+    if augmented_conditions:
+        warnings.append(
+            "Appendix 2 §5.3 conditions this API cannot verify — the Table 5.1 "
+            "/ 5.2 limits apply only if these hold: "
+            + "; ".join(
+                f"{c['clause']} {c['description']}" for c in augmented_conditions
+            )
+        )
     if extension and ext_rules.caller_must_verify:
         warnings.append(
             "Conditions this API cannot verify gate the extension: "
@@ -218,9 +243,23 @@ def validate_fdp(
             "limits. Not checked here — supply history to /validate/cumulative."
         )
 
+    skipped = [c for c in checks if c.get("status") == "data_unavailable"]
+    if skipped:
+        warnings.append(
+            "Not a complete assessment: "
+            + ", ".join(c["check"] for c in skipped)
+            + " could not be evaluated from the data supplied. A condition the "
+              "API cannot check is not a condition satisfied."
+        )
+
     return {
-        "valid": len(violations) == 0,
+        # A skipped check means compliance was not established. Reporting
+        # valid=true on an incomplete assessment is the failure mode this
+        # remediation exists to remove.
+        "valid": len(violations) == 0 and not skipped,
         "appendix": appendix,
+        "checks_run": len(checks) - len(skipped),
+        "checks_skipped": len(skipped),
         "violations": violations,
         "checks": checks,
         "warnings": warnings,

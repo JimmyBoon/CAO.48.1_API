@@ -100,6 +100,8 @@ async def validate_fdp_endpoint(request: ValidateFdpRequest) -> ValidationRespon
     return ValidationResponse(
         valid=result["valid"],
         appendix=result["appendix"],
+        checks_run=result.get("checks_run", len(result["checks"])),
+        checks_skipped=result.get("checks_skipped", 0),
         violations=[Violation(**v) for v in result["violations"]],
         checks=[CheckResult(**c) for c in result["checks"]],
         warnings=result["warnings"],
@@ -175,6 +177,8 @@ async def validate_off_duty_endpoint(
     return ValidationResponse(
         valid=result["valid"],
         appendix=result["appendix"],
+        checks_run=result.get("checks_run", len(result["checks"])),
+        checks_skipped=result.get("checks_skipped", 0),
         violations=[Violation(**v) for v in result["violations"]],
         checks=[CheckResult(**c) for c in result["checks"]],
         warnings=result["warnings"],
@@ -224,6 +228,8 @@ async def validate_cumulative_endpoint(
     return ValidationResponse(
         valid=result["valid"],
         appendix=result["appendix"],
+        checks_run=result.get("checks_run", len(result["checks"])),
+        checks_skipped=result.get("checks_skipped", 0),
         violations=[Violation(**v) for v in result["violations"]],
         checks=[CheckResult(**c) for c in result["checks"]],
         warnings=result["warnings"],
@@ -276,6 +282,8 @@ async def validate_sequence_endpoint(
     return ValidationResponse(
         valid=result["valid"],
         appendix=result["appendix"],
+        checks_run=result.get("checks_run", len(result["checks"])),
+        checks_skipped=result.get("checks_skipped", 0),
         violations=[Violation(**v) for v in result["violations"]],
         checks=[CheckResult(**c) for c in result["checks"]],
         warnings=result["warnings"],

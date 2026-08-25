@@ -2,9 +2,9 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 426 passing — 26 added in
-Phase 1, 55 in Phase 2, 75 in Phase 3 (47 of those across the two phases are pins written
-before the edits they protect). One pre-existing test was amended, in Phase 2, because it
+**Baseline:** 270 tests passing before any change. **Now:** 473 passing — 26 added in
+Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4. Sixty-odd of those are pins written
+before the edits they protect. One pre-existing test was amended, in Phase 2, because it
 asserted the defect.
 
 ---
@@ -211,21 +211,57 @@ rather than one made in passing. No clause reference is emitted for it.
 (`tests/test_fdp_confirmed_correct.py`) all still pass — two of them only after I corrected
 my own expectations, which is what pins are for.
 
-### Phase 4 — S2, S16 (largest effort)
+### Phase 4 — S2, S16 — **COMPLETE**
 
-Implement Appendix 2 §5.3 as a gate on Tables 5.1/5.2 in both the calculator and the validator:
-sector ceilings (§5.3(f)/(g)) applied **before** `final_max_fdp_hours` is returned and surfaced
-in `adjustments[]`; in-flight rest minima (§5.3(d), §5.3(g)(ii)) read from
-`in_flight_rest_hours_per_fcm` and keyed on `at_controls_final_landing`; 4+ sectors prohibited.
-§5.3(a), (b) and (e) are unverifiable facts — surface them as `conditions_caller_must_verify`.
-Where `in_flight_rest_hours_per_fcm` is absent, the rest checks are `data_unavailable`, not passed.
+Appendix 2 §5.3 is implemented in a new engine, `app/engines/augmented_crew.py`, and gates
+Tables 5.1/5.2 in both the calculator and the validator. §5.1/§5.2 permit those limits "but
+only if the conditions in subclause 5.3 are met", so the conditions are a precondition on the
+table, not commentary beside it.
 
-**Open reading to resolve before implementing:** whether Table 5.1/5.2 caps flight time as well
-as FDP. Clause 5's title and the Note under Table 5.2 both suggest yes; the tables as
-implemented carry `flight_time_limit_hours=None`. Resolve against the served text, then either
-implement the limit or document the omission explicitly. Do not leave it silent.
+- **Sector ceilings** (§5.3(f)(i), §5.3(g)(i)) are applied before `final_max_fdp_hours` is
+  returned: Class 1 / 2 additional FCMs now gives 18 / 16 / 14 at 1 / 2 / 3 sectors, each with
+  a populated `adjustments[]` entry naming the clause. Where no sector-derived reduction
+  applies, an explicit `0.0` adjustment records that, following the S7 pattern.
+- **§5.3(c)** prohibits 4+ sectors outright (S16), on both endpoints.
+- **In-flight rest minima** are read from `in_flight_rest_hours_per_fcm` and keyed on
+  `at_controls_final_landing` — the discriminator that was present in the schema and read by
+  nothing.
+- **§5.3(f)(ii)** is now checkable: `second_sector_scheduled_flight_time_hours` was added for
+  limb (B) and `rest_within_8h_before_landing` for limb (A). Absent either, the check reports
+  `data_unavailable`.
+- **§5.3(a), (b) and (e)** surface as caller-must-verify warnings and never as satisfied checks.
 
-**Interim if this phase slips:** reject `augmented_crew` with a 422.
+**The open reading is resolved, and against the spec's suspicion.** Clause 5's title
+("Increase in FDP *and flight time* limits...") and the Note under Table 5.2 both read as
+though the tables cap flight time. They do not. Appendix 2 §2.2 is the operative rule:
+
+> "An acclimatised FCM must not be assigned flight time longer than 10.5 hours **except in an
+> augmented crew operation**."
+
+followed by its own Note: "There is no flight time limit for an augmented crew operation."
+`flight_time_limit_hours: null` on the augmented path is therefore **correct, not an
+omission**. It is now explained in `calculation_notes` with the citation rather than being
+silently null, and pinned by a regression test so a future pass does not "fix" it.
+
+**A correction to my own first implementation:** I initially wrote the sector and rest checks
+as an if/elif chain, so §5.3(g) superseded §5.3(f) and §5.3(g)(ii) superseded §5.3(d). That
+produced four violations on the spec's payload but not the four it names. §5.3 introduces a
+list — "the conditions are as follows" — and they are cumulative. An 18-hour 3-sector FDP
+breaches §5.3(f)(i) *and* §5.3(g)(i); a 1-hour rest breaches §5.3(d) *and* §5.3(g)(ii).
+Reporting only the stricter one hides the shorter FDP the operator could lawfully have flown.
+The spec's acceptance criteria encode the cumulative reading, which is what caught this.
+
+**Cross-cutting C1 landed here, ahead of Phase 5.** S2's acceptance criteria require
+`data_unavailable` rest checks, which needed the three-state contract: `CheckResult.passed`
+is now `Optional[bool]` with a `status` field, and `ValidationResponse` carries `checks_run`
+and `checks_skipped`.
+
+*Behaviour change worth knowing:* on `/validate/fdp`, `valid` is now False when any check is
+`data_unavailable`. A condition the API could not evaluate is not a condition satisfied, and
+§5.1/§5.2 make the table limits conditional on §5.3 holding. Phase 5 generalises this to the
+remaining endpoints.
+
+**Interim measure not needed** — `augmented_crew` is implemented, so no 422 rejection.
 
 ### Phase 5 — S13, S9, S10, S11
 
