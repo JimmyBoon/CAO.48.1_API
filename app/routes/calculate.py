@@ -11,7 +11,9 @@ from app.engines.fdp_calculator import calculate_max_fdp
 from app.engines.off_duty_calculator import calculate_min_off_duty
 from app.models.calculation import (
     Adjustment,
+    CalculationViolation,
     DisplacementResult,
+    ExtensionOptions,
     MaxFdpRequest,
     MaxFdpResponse,
     MinOffDutyRequest,
@@ -70,6 +72,11 @@ async def calc_max_fdp(request: MaxFdpRequest) -> MaxFdpResponse:
         absolute_max_with_extension_hours=result["absolute_max_with_extension_hours"],
         post_split_max_hours=result["post_split_max_hours"],
         flight_time_limit_hours=result["flight_time_limit_hours"],
+        violations=[CalculationViolation(**v) for v in result.get("violations", [])],
+        extension_options=(
+            ExtensionOptions(**result["extension_options"])
+            if result.get("extension_options") else None
+        ),
         calculation_notes=result["calculation_notes"],
     )
 

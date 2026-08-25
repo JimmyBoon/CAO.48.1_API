@@ -166,6 +166,64 @@ class MaxFdpRequest(BaseModel):
 
 # ─── Response models ──────────────────────────────────────────────────
 
+class ConditionResult(BaseModel):
+    """
+    One condition attached to a provision — a reduction, or an extension.
+
+    Used wherever the API must distinguish a condition it checked from one the
+    caller has to establish for themselves.
+    """
+    clause: str = Field(description="Clause reference for this specific condition.")
+    description: str = Field(description="What the condition requires.")
+
+
+class CalculationViolation(BaseModel):
+    """A hard violation detected during limit calculation."""
+    check: str = Field(description="Check identifier.")
+    clause: str = Field(description="CAO 48.1 clause reference.")
+    severity: str = Field(default="hard_limit", description="Violation severity.")
+    actual: Optional[float] = Field(default=None, description="Observed value.")
+    limit: Optional[float] = Field(default=None, description="Permitted value.")
+    detail: str = Field(description="Human-readable description.")
+    remediation: str = Field(default="", description="Suggested corrective action.")
+
+
+class ExtensionProvision(BaseModel):
+    """One extension provision available under an appendix."""
+    type: str = Field(description="'unforeseen' or 'urgent'.")
+    clause: str = Field(description="Clause granting this extension.")
+    max_hours: float = Field(description="Maximum hours this provision allows.")
+    extended_fdp_ceiling_hours: Optional[float] = Field(
+        default=None,
+        description=(
+            "Ceiling on the extended FDP where the clause states one. Null "
+            "where the clause states no explicit ceiling — App 4B §3.1(a) is "
+            "the case in point; its 16h proviso attaches to §3.1(b) only."
+        ),
+    )
+
+
+class ExtensionOptions(BaseModel):
+    """Extension provisions and the conditions gating them."""
+    available: bool = Field(description="Whether this appendix permits any extension.")
+    provisions: list[ExtensionProvision] = Field(default_factory=list)
+    conditions_caller_must_verify: list[ConditionResult] = Field(
+        default_factory=list,
+        description=(
+            "Facts gating the extension that this API cannot check — "
+            "operations manual procedures, urgency determinations, and the "
+            "PIC's consultation and fitness assessment."
+        ),
+    )
+    clause_cumulative_crosscheck: str = Field(
+        default="",
+        description=(
+            "Clause requiring that an extension not breach cumulative flight "
+            "time limits (App 4B §3.6). Not evaluated by /validate/fdp."
+        ),
+    )
+
+
 class Adjustment(BaseModel):
     """A single adjustment step in the FDP calculation."""
     clause: str = Field(description="CAO 48.1 clause reference, e.g. '§3.1'.")
@@ -202,6 +260,19 @@ class MaxFdpResponse(BaseModel):
     flight_time_limit_hours: Optional[float] = Field(
         default=None,
         description="Maximum flight time per FDP (hours). Null if no per-FDP limit.",
+    )
+    violations: list[CalculationViolation] = Field(
+        default_factory=list,
+        description=(
+            "Hard violations detected while calculating the limit — a duty the "
+            "instrument prohibits outright rather than merely constrains. A "
+            "6th consecutive early start is the main case: no maximum FDP "
+            "figure makes that assignment lawful."
+        ),
+    )
+    extension_options: Optional[ExtensionOptions] = Field(
+        default=None,
+        description="Every extension provision available under this appendix.",
     )
     calculation_notes: list[str] = Field(
         default_factory=list,
@@ -373,12 +444,6 @@ class MinOffDutyRequest(BaseModel):
 
 
 # ─── Response models ──────────────────────────────────────────────────
-
-class ConditionResult(BaseModel):
-    """One condition attached to a reduction provision."""
-    clause: str = Field(description="Clause reference for this specific condition.")
-    description: str = Field(description="What the condition requires.")
-
 
 class ReductionApplicable(BaseModel):
     """

@@ -68,6 +68,83 @@ class FdpTable:
     notes: str = ""
 
 
+# ─── Extension rules ──────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ExtensionRules:
+    """
+    FDP extension allowances for one appendix.
+
+    Appendix 4B is the reason this is a structure rather than a single number.
+    Its clause 3 is titled "Extensions" and grants two distinct provisions with
+    different limits, different ceilings, and a single-pilot distinction:
+
+      §3.1 unforeseen operational circumstances — 2h multi-pilot, 1h
+           single-pilot, beyond (a) the Table 1.1 limit, or (b) that limit as
+           increased by a split-duty rest, *provided the extended FDP does not
+           exceed 16 hours*. Read the proviso carefully: it attaches to
+           §3.1(b) only. §3.1(a) carries no explicit ceiling.
+
+      §3.2 urgent operations — 4h, beyond (c) the Table 1.1 limit or (d) the
+           split-duty-increased limit, both capped at 16 hours.
+
+    Encoding this as `max_extension_hours = 0.0` produced a flat denial that
+    this appendix permits no extension at all, which is the opposite of what
+    clause 3 says.
+    """
+    available: bool = True
+
+    # §3.1 / §5.3 — unforeseen operational circumstances
+    unforeseen_hours_multi_pilot: float = 1.0
+    unforeseen_hours_single_pilot: float = 1.0
+    # A ceiling that applies only where the base limit was increased by a
+    # split-duty rest period (App 4B §3.1(b)). None = no explicit ceiling.
+    unforeseen_ceiling_after_split_duty_hours: Optional[float] = None
+    # A ceiling that applies unconditionally. None = no explicit ceiling.
+    unforeseen_ceiling_hours: Optional[float] = None
+    clause_unforeseen: str = ""
+    # App 2 §7.3(a)(ii): 2 hours for an augmented crew operation under clause 5.
+    unforeseen_hours_augmented_crew: Optional[float] = None
+    clause_unforeseen_augmented: str = ""
+
+    # §3.2 — urgent operations (Appendix 4B only)
+    urgent_available: bool = False
+    urgent_hours: float = 0.0
+    urgent_ceiling_hours: Optional[float] = None
+    clause_urgent: str = ""
+
+    # §3.6 — an FDP limit must not be extended if doing so would breach the
+    # cumulative flight time limits.
+    clause_cumulative_crosscheck: str = ""
+
+    # Facts the API cannot verify but which gate the provision.
+    caller_must_verify: tuple[tuple[str, str], ...] = ()
+
+
+# ─── Early start rules ────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class EarlyStartRules:
+    """
+    Consecutive early start limits.
+
+    §11.1 (App 3 and 4), §13.1 (App 2), §10.1 (App 6) all read "an FCM must
+    not be assigned more than 3 consecutive early starts", relieved by §11.3 /
+    §13.3 / §10.3 which permit "a 4th, or a 4th and a 5th" with a 2h and 4h
+    reduction respectively.
+
+    The relief enumerates a 4th and a 5th. There is no 6th. Clamping the
+    reduction at 4 hours for every subsequent start, which is what "5th+" did,
+    permits a duty the instrument prohibits outright.
+    """
+    available: bool = False
+    max_consecutive: int = 3
+    # Ordinal of the early start -> hours the maximum FDP is reduced by.
+    reductions: tuple[tuple[int, float], ...] = ((4, 2.0), (5, 4.0))
+    clause_limit: str = ""    # §11.1 — the prohibition
+    clause_relief: str = ""   # §11.3 — the 4th/5th allowance
+
+
 # ─── Appendix FDP configuration ──────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -79,6 +156,13 @@ class AppendixFdpConfig:
     wocl_early_start: bool = False
     max_extension_hours: float = 1.0
     increased_fdp: bool = False
+    extensions: ExtensionRules = ExtensionRules()
+    early_starts: EarlyStartRules = EarlyStartRules()
+    # Clause references for the split-duty provisions (§3.1/§3.3/§3.4 in
+    # App 3 and 4; §4.x in App 2). Kept beside the rules they cite.
+    clause_split_sleeping: str = ""
+    clause_split_resting: str = ""
+    clause_split_night_overlap: str = ""
 
 
 # ─── Sector key resolution ────────────────────────────────────────────
@@ -109,6 +193,14 @@ def resolve_sector_key_3col(sectors: int, single_pilot: bool) -> str:
 # APPENDIX 1 — Basic Limits
 # ═══════════════════════════════════════════════════════════════════════
 
+# NOTE (found during Phase 3, outside the remediation spec): Appendix 1
+# contains no split-duty provision — the word "split" does not appear anywhere
+# in the appendix, whose clauses are 1 Sleep opportunity, 2 FDP and flight time
+# limits, 3 Extensions, 4 Off-duty period limits, 5 Cumulative flight time.
+# These rules therefore grant a +1h FDP increase with no clause behind it, in
+# the permissive direction. Left in place rather than removed because Appendix 1
+# is in the spec's untested-areas list and deserves a deliberate pass, not a
+# change made in passing. No clause reference is emitted for it.
 _APP1_SPLIT = SplitDutyRules(
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
@@ -137,6 +229,18 @@ APP1 = AppendixFdpConfig(
     },
     split_duty=_APP1_SPLIT,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§3.1",
+        caller_must_verify=(
+            ("§3.1(c)", "An extension is operationally necessary to complete the duty"),
+            ("§3.1(d)", "The FCM considers himself or herself fit for the extension"),
+        ),
+    ),
+    # Appendix 1 has no split-duty provision — the word does not appear
+    # anywhere in the appendix. No clause reference is available because
+    # there is no clause. See the note on _APP1_SPLIT.
 )
 
 
@@ -252,6 +356,26 @@ APP2 = AppendixFdpConfig(
     split_duty=_APP2_SPLIT,
     wocl_early_start=True,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§7.3(a)(i)",
+        unforeseen_hours_augmented_crew=2.0,
+        clause_unforeseen_augmented="§7.3(a)(ii)",
+        caller_must_verify=(
+            ("§7.4", "The PIC consulted each FCM and is satisfied each considers "
+                     "himself or herself fit for the extension"),
+        ),
+    ),
+    early_starts=EarlyStartRules(
+        available=True,
+        max_consecutive=3,
+        clause_limit="§13.1",
+        clause_relief="§13.3",
+    ),
+    clause_split_sleeping="§4.1",
+    clause_split_resting="§4.3",
+    clause_split_night_overlap="§4.4",
 )
 
 
@@ -297,6 +421,24 @@ APP3 = AppendixFdpConfig(
     split_duty=_APP3_SPLIT,
     wocl_early_start=True,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§5.3(a)",
+        caller_must_verify=(
+            ("§5.4", "The PIC consulted each FCM and is satisfied each considers "
+                     "himself or herself fit for the extension"),
+        ),
+    ),
+    early_starts=EarlyStartRules(
+        available=True,
+        max_consecutive=3,
+        clause_limit="§11.1",
+        clause_relief="§11.3",
+    ),
+    clause_split_sleeping="§3.1",
+    clause_split_resting="§3.3",
+    clause_split_night_overlap="§3.4",
 )
 
 
@@ -340,6 +482,23 @@ APP4 = AppendixFdpConfig(
     split_duty=_APP4_SPLIT,
     wocl_early_start=True,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§5.3",
+        caller_must_verify=(
+            ("§5.4", "The PIC is satisfied that he or she is fit for the extension"),
+        ),
+    ),
+    early_starts=EarlyStartRules(
+        available=True,
+        max_consecutive=3,
+        clause_limit="§11.1",
+        clause_relief="§11.3",
+    ),
+    clause_split_sleeping="§3.1",
+    clause_split_resting="§3.3",
+    clause_split_night_overlap="§3.4",
 )
 
 
@@ -378,6 +537,7 @@ APP4A = AppendixFdpConfig(
     },
     split_duty=_APP4A_SPLIT,
     max_extension_hours=0.0,  # no extension provision
+    extensions=ExtensionRules(available=False),
 )
 
 
@@ -429,7 +589,32 @@ APP4B = AppendixFdpConfig(
     },
     split_duty=_APP4B_SPLIT,
     increased_fdp=True,
-    max_extension_hours=0.0,  # urgent ops extension handled separately (+4h)
+    # Clause 3 is titled "Extensions"; see ExtensionRules below. The scalar
+    # is retained for backward compatibility and reports the unforeseen
+    # multi-pilot figure.
+    max_extension_hours=2.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=2.0,
+        unforeseen_hours_single_pilot=1.0,
+        # §3.1(b) only — an extension off a split-duty-increased limit.
+        unforeseen_ceiling_after_split_duty_hours=16.0,
+        # §3.1(a) states no explicit ceiling.
+        unforeseen_ceiling_hours=None,
+        clause_unforeseen="§3.1",
+        urgent_available=True,
+        urgent_hours=4.0,
+        urgent_ceiling_hours=16.0,   # §3.2(c) and §3.2(d) both
+        clause_urgent="§3.2",
+        clause_cumulative_crosscheck="§3.6",
+        caller_must_verify=(
+            ("§3.2(a)", "The AOC holder has urgent operations procedures in the "
+                        "operations manual"),
+            ("§3.2(b)", "The operation is deemed urgent in accordance with that "
+                        "manual"),
+            ("§3.3", "The PIC of a multi-pilot operation consulted each FCM and "
+                     "is satisfied each considers himself or herself fit"),
+        ),
+    ),
 )
 
 
@@ -472,7 +657,20 @@ APP5 = AppendixFdpConfig(
     },
     split_duty=_APP5_SPLIT,
     increased_fdp=True,
-    max_extension_hours=0.0,
+    # Appendix 5 clause 3 is titled "Extensions": §3.1 grants up to 2 hours.
+    # This was 0.0, which produced the same false "does not permit FDP
+    # extensions" message as Appendix 4B. Found during Phase 3; App 5 is in
+    # the spec's untested-areas list.
+    max_extension_hours=2.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=2.0,
+        unforeseen_hours_single_pilot=2.0,
+        clause_unforeseen="§3.1",
+        caller_must_verify=(
+            ("§3.2", "The PIC of a multi-pilot operation consulted each FCM and "
+                     "is satisfied each considers himself or herself fit"),
+        ),
+    ),
 )
 
 
@@ -510,6 +708,17 @@ APP5A = AppendixFdpConfig(
     },
     split_duty=_APP5A_SPLIT,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§3.1",
+        caller_must_verify=(
+            ("§3.1", "The FCM considers himself or herself fit for the extension"),
+            ("§3.2", "The FDP is not extended beyond the end of evening civil "
+                     "twilight, unless necessary to complete the duties "
+                     "associated with the last daylight flight"),
+        ),
+    ),
 )
 
 
@@ -555,6 +764,24 @@ APP6 = AppendixFdpConfig(
     split_duty=_APP6_SPLIT,
     wocl_early_start=True,
     max_extension_hours=1.0,
+    extensions=ExtensionRules(
+        unforeseen_hours_multi_pilot=1.0,
+        unforeseen_hours_single_pilot=1.0,
+        clause_unforeseen="§4.3",
+        caller_must_verify=(
+            ("§4.4", "The PIC consulted each FCM and is satisfied each considers "
+                     "himself or herself fit for the extension"),
+        ),
+    ),
+    early_starts=EarlyStartRules(
+        available=True,
+        max_consecutive=3,
+        clause_limit="§10.1",
+        clause_relief="§10.3",
+    ),
+    clause_split_sleeping="§3.1",
+    clause_split_resting="§3.3",
+    clause_split_night_overlap="§3.4",
 )
 
 

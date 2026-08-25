@@ -13,10 +13,8 @@ All logic derived from CAO 48.1 Instrument 2019 (Compilation No. 3, F2021C01239)
 
 from datetime import datetime
 
-from app.engines.fdp_calculator import calculate_max_fdp
-
-# Extension type "urgent" is only valid for emergency service operations (Appendix 4B)
-_URGENT_EXTENSION_APPENDICES = {"4B"}
+from app.data.fdp_tables import FDP_CONFIGS
+from app.engines.fdp_calculator import calculate_max_fdp, _extension_ceiling
 
 
 def validate_fdp(
@@ -95,69 +93,78 @@ def validate_fdp(
                 "remediation": remediation,
             })
 
-    # ─── Check 1: FDP within applicable limit ──────────────────────────
-    # When extension provided, the applicable limit is the base max plus
-    # the extension hours claimed. Extension validity is a separate check.
+    # ─── Resolve the extension actually available in law ───────────────
     final_max = limits["final_max_fdp_hours"]
-    extension_hours_used = extension["hours_used"] if extension else 0.0
-    applicable_limit = final_max + extension_hours_used
-    extension_note = " (including extension)" if extension else ""
+    ext_rules = FDP_CONFIGS[appendix].extensions
+    requested_hours = extension["hours_used"] if extension else 0.0
+    ext_type = extension["type"] if extension else None
 
-    fdp_passed = actual_fdp_hours <= applicable_limit
+    permitted_hours, ext_clause, ext_reasons = _resolve_extension(
+        appendix, ext_rules, ext_type, requested_hours, single_pilot,
+        limits.get("split_duty_applied", False),
+    )
+
+    # ─── Check 1: FDP within applicable limit ──────────────────────────
+    # The limit is built from the extension the law permits, capped at the
+    # appendix maximum — never the one the caller asked for. Crediting the
+    # requested figure let a check pass on an extension the adjacent check had
+    # just ruled unlawful.
+    effective_limit = final_max + permitted_hours
+    ceiling = (
+        _extension_ceiling(ext_rules, ext_type or "unforeseen",
+                           limits.get("split_duty_applied", False))
+        if extension else None
+    )
+    ceiling_applied = ceiling is not None and effective_limit > ceiling
+    if ceiling_applied:
+        effective_limit = ceiling
+
+    fdp_passed = actual_fdp_hours <= effective_limit
+
+    if extension:
+        detail_suffix = (
+            f" (base {final_max:.2f}h + {permitted_hours:.2f}h permitted "
+            f"extension; {requested_hours:.2f}h requested"
+            + (f"; capped at {ceiling:.2f}h by {ext_clause}" if ceiling_applied else "")
+            + ")"
+        )
+    else:
+        detail_suffix = ""
+
     _add_check(
         check_id="fdp_within_limit",
         passed=fdp_passed,
-        clause=f"CAO 48.1 Appendix {appendix}",
+        clause=ext_clause if extension else f"CAO 48.1 Appendix {appendix}",
         actual=round(actual_fdp_hours, 4),
-        limit=round(applicable_limit, 4),
+        limit=round(effective_limit, 4),
         detail=(
             f"Actual FDP {actual_fdp_hours:.2f}h "
             f"{'≤' if fdp_passed else '>'} "
-            f"limit {applicable_limit:.2f}h{extension_note}"
+            f"limit {effective_limit:.2f}h{detail_suffix}"
         ),
         severity="hard_limit",
         remediation=(
-            f"Reduce FDP to {applicable_limit:.2f}h or less."
+            f"Reduce FDP to {effective_limit:.2f}h or less."
             if not fdp_passed else ""
         ),
     )
 
     # ─── Check 2: Extension permitted (only when extension provided) ───
     if extension:
-        ext_type = extension["type"]
-        hours_used = extension["hours_used"]
-        max_ext = limits["max_extension_hours"]
-
-        reasons: list[str] = []
-        if max_ext == 0:
-            reasons.append(
-                f"Appendix {appendix} does not permit FDP extensions"
-            )
-        if ext_type == "urgent" and appendix not in _URGENT_EXTENSION_APPENDICES:
-            reasons.append(
-                "Extension type 'urgent' is only valid for emergency service "
-                "operations (Appendix 4B)"
-            )
-        if hours_used > max_ext > 0:
-            reasons.append(
-                f"{hours_used}h extension exceeds the maximum permitted "
-                f"extension of {max_ext}h for Appendix {appendix}"
-            )
-
-        ext_passed = len(reasons) == 0
+        ext_passed = len(ext_reasons) == 0
         _add_check(
             check_id="extension_permitted",
             passed=ext_passed,
-            clause=f"CAO 48.1 Appendix {appendix}",
-            actual=hours_used,
-            limit=max_ext if max_ext > 0 else None,
+            clause=ext_clause,
+            actual=requested_hours,
+            limit=permitted_hours if permitted_hours > 0 else None,
             detail=(
-                f"Extension {hours_used}h ({ext_type}): "
-                + ("permitted" if ext_passed else "; ".join(reasons))
+                f"Extension {requested_hours}h ({ext_type}): "
+                + ("permitted" if ext_passed else "; ".join(ext_reasons))
             ),
             severity="hard_limit",
             remediation=(
-                "; ".join(reasons) + "." if not ext_passed else ""
+                "; ".join(ext_reasons) + "." if not ext_passed else ""
             ),
         )
 
@@ -182,11 +189,93 @@ def validate_fdp(
             ),
         )
 
+    # Violations raised during limit calculation (e.g. a prohibited 6th
+    # consecutive early start) are part of this FDP's outcome.
+    for calc_violation in limits.get("violations", []):
+        violations.append(calc_violation)
+        checks.append({
+            "check": calc_violation["check"],
+            "passed": False,
+            "clause": calc_violation["clause"],
+            "actual": calc_violation["actual"],
+            "limit": calc_violation["limit"],
+            "detail": calc_violation["detail"],
+        })
+
+    warnings: list[str] = []
+    if extension and ext_rules.caller_must_verify:
+        warnings.append(
+            "Conditions this API cannot verify gate the extension: "
+            + "; ".join(
+                f"{clause} {description}"
+                for clause, description in ext_rules.caller_must_verify
+            )
+        )
+    if extension and ext_rules.clause_cumulative_crosscheck:
+        warnings.append(
+            f"{ext_rules.clause_cumulative_crosscheck}: an FDP limit must not be "
+            "extended if doing so would exceed the cumulative flight time "
+            "limits. Not checked here — supply history to /validate/cumulative."
+        )
+
     return {
         "valid": len(violations) == 0,
         "appendix": appendix,
         "violations": violations,
         "checks": checks,
-        "warnings": [],
+        "warnings": warnings,
         "calculation_notes": limits["calculation_notes"],
     }
+
+
+def _resolve_extension(
+    appendix: str,
+    rules,
+    ext_type: str | None,
+    requested_hours: float,
+    single_pilot: bool,
+    split_duty_applied: bool,
+) -> tuple[float, str, list[str]]:
+    """
+    Return (permitted_hours, clause, reasons_it_is_not_permitted).
+
+    `permitted_hours` is what the law allows, capped at the appendix maximum —
+    the figure the duration check must be built from, regardless of what the
+    caller requested.
+    """
+    reasons: list[str] = []
+
+    if ext_type is None:
+        return 0.0, f"CAO 48.1 Appendix {appendix}", reasons
+
+    if not rules.available:
+        return 0.0, f"CAO 48.1 Appendix {appendix}", [
+            f"Appendix {appendix} provides no FDP extension."
+        ]
+
+    if ext_type == "urgent":
+        if not rules.urgent_available:
+            return 0.0, rules.clause_unforeseen, [
+                "Extension type 'urgent' applies to urgent operations under "
+                "Appendix 4B clause 3.2; it is not available under Appendix "
+                f"{appendix}"
+            ]
+        allowance = rules.urgent_hours
+        clause = rules.clause_urgent
+    else:
+        # "unforeseen" and "final_sector" both run off the unforeseen provision.
+        allowance = (
+            rules.unforeseen_hours_single_pilot if single_pilot
+            else rules.unforeseen_hours_multi_pilot
+        )
+        clause = rules.clause_unforeseen
+
+    if requested_hours > allowance:
+        reasons.append(
+            f"{requested_hours}h extension exceeds the maximum of {allowance}h "
+            f"permitted under {clause} for a "
+            f"{'single-pilot' if single_pilot else 'multi-pilot'} operation"
+        )
+
+    permitted = min(requested_hours, allowance)
+    return permitted, clause, reasons

@@ -2,9 +2,10 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 351 passing — 26 added in
-Phase 1, 55 in Phase 2 (14 of them pins written before the Phase 2 edits). One pre-existing
-test was amended, because it asserted the defect.
+**Baseline:** 270 tests passing before any change. **Now:** 426 passing — 26 added in
+Phase 1, 55 in Phase 2, 75 in Phase 3 (47 of those across the two phases are pins written
+before the edits they protect). One pre-existing test was amended, in Phase 2, because it
+asserted the defect.
 
 ---
 
@@ -165,22 +166,50 @@ will be taken". Two fields mean one thing and only one is wired. This is an §8.
 parameter-contract violation rather than a calculation error, and disentangling it changes
 which field drives every existing caller's result, so it belongs with the Phase 5 sweep.
 
-### Phase 3 — S5, S6, S7, S12
+### Phase 3 — S5, S6, S7, S12 — **COMPLETE**
 
-- **S5:** give Appendix 4B a real extension rule set keyed on `single_pilot` and
-  `extension.type` — `unforeseen` 2.0h multi / 1.0h single, `urgent` 4.0h either. The 16h
-  ceiling is unconditional for §3.2 and applies to §3.1 **only** where the base limit was
-  split-duty-increased (§3.1(b)); §3.1(a) carries no explicit ceiling. Delete the
-  "does not permit FDP extensions" string. Add §3.6 as a cumulative cross-check, marked
-  `data_unavailable` when cumulative data is absent (uses C1).
-- **S6:** `consecutive_early_starts >= 5` becomes a hard violation citing §11.1 on both the
-  calculator and the validator. Change the note from `"5th+"` to `"5th"`. Apply the same to
-  the Appendix 2 (§13) and Appendix 6 (§10) equivalents, each with its own clause number.
-- **S7:** invert the condition in `_apply_split_duty` so a night overlap is a **gate**, not a
-  branch: when `overlaps_2300_0529` and (`duration < 7` or accommodation is not sleeping),
-  grant no increase and record an explicit `0.0` adjustment citing §3.4(a).
-- **S12:** `permitted_extension = min(requested, appendix_max)`, and compute
-  `fdp_within_limit` against that. Name both figures in the `detail` string.
+Extension allowances and early-start limits became per-appendix data structures
+(`ExtensionRules`, `EarlyStartRules` in `app/data/fdp_tables.py`), each carrying its own
+clause. Split-duty clause references moved onto the appendix config alongside them.
+
+- **S5 done.** Appendix 4B now has both provisions: §3.1 unforeseen (2h multi-pilot, 1h
+  single-pilot) and §3.2 urgent (4h). The 16h ceiling is unconditional for §3.2 and applies
+  to §3.1 only where the base limit was split-duty-increased (§3.1(b)) — §3.1(a) states no
+  explicit ceiling, and that reading is encoded rather than assumed. §3.2(a)/(b) and §3.3
+  surface as `conditions_caller_must_verify`; §3.6 is flagged as a warning naming the clause
+  and saying it was not evaluated. The blanket-denial string is gone from the tree.
+- **S6 done.** The relief clause enumerates a 4th and a 5th and stops; a 6th is prohibited by
+  §11.1. `consecutive_early_starts >= 5` is now a hard violation on both the calculator and
+  the validator, each appendix citing its own clause — §13.1 (App 2), §11.1 (App 3 and 4),
+  §10.1 (App 6). No response contains `5th+`.
+- **S7 done.** `_apply_split_duty` treats a night overlap as a gate rather than a branch.
+  A rest overlapping 2300–0529 that is under 7 hours or not sleeping accommodation earns no
+  increase — not the §3.1 increase and not the §3.3 half-credit — and records an explicit
+  `0.0` adjustment citing §3.4(a) so the absence is auditable. §3.4(b) still reaches 16h.
+- **S12 done.** `fdp_within_limit` is computed from `min(requested, appendix_max)`, then
+  capped by any ceiling the clause states. The detail names the base, the permitted figure
+  and the requested one.
+
+**Also fixed: Appendix 5 had the same extension defect as 4B.** Clause 3 there is likewise
+titled "Extensions" and §3.1 grants up to 2 hours; `max_extension_hours` was 0.0, so the same
+false denial was produced. Not in the spec — Appendix 5 sits in its untested-areas list.
+
+**Citations corrected on this path:** `§3.night` → `§3.4(a)` / `§3.4(b)`; resting
+accommodation `§3.2` → `§3.3` (§3.2 is the ODP credit, a different rule); and
+`"CAO 48.1 Appendix 3"` on extension checks → `§5.3(a)`. Every extension clause was read
+from the served text rather than inferred — four of my first-pass guesses were wrong
+(App 1 is §3.1 not §3.3, App 2 is §7.3(a)(i) not §7.3(a), App 4 is §5.3 not §5.3(a), App 6
+is §4.3 not §4.3(a)), which is precisely the failure mode S13 describes.
+
+**Also recorded, not changed: Appendix 1 has no split-duty provision.** The word does not
+appear anywhere in the appendix, yet `_APP1_SPLIT` grants a +1h increase. That is a
+false-permissive with no clause behind it. Left in place with a comment rather than removed,
+because Appendix 1 belongs to the untested-areas pass and deserves a deliberate decision
+rather than one made in passing. No clause reference is emitted for it.
+
+*No existing test broke in this phase.* The 33 FDP pins written first
+(`tests/test_fdp_confirmed_correct.py`) all still pass — two of them only after I corrected
+my own expectations, which is what pins are for.
 
 ### Phase 4 — S2, S16 (largest effort)
 
