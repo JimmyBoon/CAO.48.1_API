@@ -371,19 +371,45 @@ def validate_roster(
                     last_odp_had_local_night = True
 
     # ── Cumulative check across roster + prior history ─────────────────
-    # Build combined FDP log: prior history (if any) + roster FDPs
+    # Build combined FDP log: prior history (if any) + roster FDPs.
+    #
+    # prior_fdp_log and prior_summary are two ways of describing the same
+    # thing. The log is strictly richer, so it wins where both are supplied
+    # — but it is never silently dropped either way: a discarded
+    # prior_summary is reported in warnings.
+    #
+    # The roster's own FDPs are NOT prior history. They must not suppress
+    # prior_summary, which is what the earlier
+    # `summary=prior_summary if not combined_log else None` did: any roster
+    # containing a single FDP discarded every prior figure supplied.
+    effective_summary = prior_summary
+    if prior_fdp_log and prior_summary is not None:
+        effective_summary = None
+        warnings.append(
+            "Both 'prior_fdp_log' and 'prior_summary' were supplied — "
+            "'prior_summary' was ignored because 'prior_fdp_log' carries the "
+            "same information at higher resolution. Remove one to silence this."
+        )
+
     combined_log = list(prior_fdp_log or []) + fdp_history
     cum_result: dict = {}
 
-    if combined_log or prior_summary is not None:
+    if combined_log or effective_summary is not None:
         as_of = _to_utc(roster_end_utc)
         try:
-            cum_result = validate_cumulative(
-                appendix=appendix_upper,
-                as_of_utc=as_of,
-                fdp_log=combined_log if combined_log else None,
-                summary=prior_summary if not combined_log else None,
-            )
+            if combined_log:
+                cum_result = validate_cumulative(
+                    appendix=appendix_upper,
+                    as_of_utc=as_of,
+                    fdp_log=combined_log,
+                    baseline_summary=effective_summary,
+                )
+            else:
+                cum_result = validate_cumulative(
+                    appendix=appendix_upper,
+                    as_of_utc=as_of,
+                    summary=effective_summary,
+                )
         except ValueError as exc:
             warnings.append(f"Cumulative check skipped — {exc}")
     else:

@@ -10,6 +10,7 @@ All logic derived from CAO 48.1 Instrument 2019 (Compilation No. 3, F2021C01239)
 
 from datetime import datetime
 
+from app.models._validators import validate_utc_offset
 from app.data.fdp_tables import (
     AppendixFdpConfig,
     FdpTable,
@@ -141,9 +142,18 @@ def calculate_max_fdp(
 # ═══════════════════════════════════════════════════════════════════════
 
 def _utc_to_local_minutes(dt: datetime, offset_hours: float) -> int:
-    """Convert a UTC datetime to local minutes from midnight."""
+    """
+    Convert a UTC datetime to local minutes from midnight.
+
+    The modulo below is the legitimate midnight wrap (2300Z at +0800 is 0700
+    local the next day) and must stay. What it must NOT do is silently absorb
+    an offset that does not exist: at +50 it produced a plausible-looking time
+    band from nonsense. Request models reject out-of-range offsets, and this
+    guard repeats the check for callers that reach the engines directly.
+    """
+    validate_utc_offset(offset_hours, "local_time_offset_hours")
     total_minutes = dt.hour * 60 + dt.minute + int(offset_hours * 60)
-    return total_minutes % 1440  # wrap around midnight
+    return total_minutes % 1440  # midnight wrap
 
 
 def _select_table(

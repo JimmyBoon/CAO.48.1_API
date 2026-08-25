@@ -312,6 +312,7 @@ def validate_cumulative(
     as_of_utc: datetime,
     fdp_log: Optional[list] = None,
     summary=None,
+    baseline_summary=None,
 ) -> dict:
     """
     Validate cumulative flight time, duty time, and recovery requirements.
@@ -325,7 +326,17 @@ def validate_cumulative(
     fdp_log : list of FdpHistoryRecord, optional
         Full FDP history (preferred). Computes all rolling windows.
     summary : CumulativeSummaryInput, optional
-        Pre-aggregated totals (fallback when log not available).
+        Pre-aggregated totals (fallback when log not available). Used only
+        when ``fdp_log`` is absent.
+    baseline_summary : CumulativeSummaryInput, optional
+        Pre-aggregated totals for history *preceding* the supplied log,
+        combined with the log-derived figures rather than replacing them.
+        Hour-based windows are additive (prior + computed). Days-off counts
+        and recovery-block booleans are assertions about the whole window,
+        so the caller's value is authoritative for those and the log-derived
+        figure is not used — the API cannot see the period the caller is
+        describing, and treating its own empty-space figure as better data
+        is how S9 under-reports.
 
     Returns
     -------
@@ -364,12 +375,12 @@ def validate_cumulative(
     dt = config.duty_time
     rec = config.recovery
 
-    # Helper: get a value from either recs or summary
+    # Helper: get a value from recs (plus any prior baseline) or from summary
     def _from_log_or_summary(
         window_hours: Optional[float],
         window_days: Optional[float],
         agg_fn,
-        summary_field: Optional[float],
+        summary_field_name: str,
         label: str,
     ) -> Optional[float]:
         if recs is not None:
@@ -379,17 +390,40 @@ def validate_cumulative(
                 ws = as_of_utc - timedelta(days=window_days)
             else:
                 return None
-            return agg_fn(_recs_in_window(recs, ws, as_of_utc))
-        if summary is not None and summary_field is not None:
-            return summary_field
+            computed = agg_fn(_recs_in_window(recs, ws, as_of_utc))
+            prior = _get_summary(baseline_summary, summary_field_name)
+            if prior is not None:
+                notes.append(
+                    f"{label}: {computed:.2f}h from supplied events + "
+                    f"{prior:.2f}h carried from prior_summary = {computed + prior:.2f}h."
+                )
+                return computed + prior
+            return computed
+        if summary is not None:
+            val = _get_summary(summary, summary_field_name)
+            if val is not None:
+                return val
         return None  # unavailable
+
+    def _assertion_from_summary(field_name: str):
+        """
+        Read a whole-window assertion (days-off count, recovery boolean) from
+        whichever summary applies. A baseline value is authoritative: it
+        describes a window the supplied events do not cover.
+        """
+        for src in (baseline_summary, summary):
+            if src is not None:
+                val = _get_summary(src, field_name)
+                if val is not None:
+                    return val
+        return None
 
     # ── Flight time checks ────────────────────────────────────────────
 
     if ft.period_168h_hours is not None:
         val = _from_log_or_summary(
             168, None, _sum_flight,
-            _get_summary(summary, "flight_time_168h_hours"),
+            "flight_time_168h_hours",
             "168h",
         )
         _add_check(
@@ -410,7 +444,7 @@ def validate_cumulative(
     if ft.period_28d_hours is not None:
         val = _from_log_or_summary(
             None, 28, _sum_flight,
-            _get_summary(summary, "flight_time_28d_hours"),
+            "flight_time_28d_hours",
             "28d",
         )
         _add_check(
@@ -431,7 +465,7 @@ def validate_cumulative(
     if ft.period_90d_hours is not None:
         val = _from_log_or_summary(
             None, 90, _sum_flight,
-            _get_summary(summary, "flight_time_90d_hours"),
+            "flight_time_90d_hours",
             "90d",
         )
         _add_check(
@@ -452,7 +486,7 @@ def validate_cumulative(
     if ft.period_365d_hours is not None:
         val = _from_log_or_summary(
             None, 365, _sum_flight,
-            _get_summary(summary, "flight_time_365d_hours"),
+            "flight_time_365d_hours",
             "365d",
         )
         _add_check(
@@ -473,7 +507,7 @@ def validate_cumulative(
     if ft.period_384h_hours is not None:
         val = _from_log_or_summary(
             384, None, _sum_flight,
-            _get_summary(summary, "flight_time_384h_hours"),
+            "flight_time_384h_hours",
             "384h",
         )
         _add_check(
@@ -496,7 +530,7 @@ def validate_cumulative(
     if dt.period_168h_hours is not None:
         val = _from_log_or_summary(
             168, None, _sum_duty,
-            _get_summary(summary, "duty_time_168h_hours"),
+            "duty_time_168h_hours",
             "168h",
         )
         _add_check(
@@ -517,7 +551,7 @@ def validate_cumulative(
     if dt.period_336h_hours is not None:
         val = _from_log_or_summary(
             336, None, _sum_duty,
-            _get_summary(summary, "duty_time_336h_hours"),
+            "duty_time_336h_hours",
             "336h",
         )
         _add_check(
@@ -538,7 +572,14 @@ def validate_cumulative(
     # ── Recovery block checks ─────────────────────────────────────────
 
     if rec.period_168h_min_hours and rec.period_168h_min_hours > 0:
-        if recs is not None:
+        prior = _get_summary(baseline_summary, "recovery_36h_block_in_168h")
+        if prior is not None:
+            result = prior
+            notes.append(
+                "recovery_36h_2ln_in_168h: taken from prior_summary "
+                f"({prior}) rather than derived from supplied events."
+            )
+        elif recs is not None:
             result = _find_recovery_block(
                 recs,
                 min_gap_hours=rec.period_168h_min_hours,
@@ -546,10 +587,8 @@ def validate_cumulative(
                 window_hours=168,
                 as_of_utc=as_of_utc,
             )
-        elif summary is not None:
-            result = _get_summary(summary, "recovery_36h_block_in_168h")
         else:
-            result = None
+            result = _get_summary(summary, "recovery_36h_block_in_168h")
 
         clause = "§4.1a" if appendix == "1" else "§10.5a"
         _add_check(
@@ -571,7 +610,10 @@ def validate_cumulative(
         )
 
     if rec.period_336h_min_hours is not None:
-        if recs is not None:
+        prior = _get_summary(baseline_summary, "recovery_36h_block_in_336h")
+        if prior is not None:
+            result = prior
+        elif recs is not None:
             result = _find_recovery_block(
                 recs,
                 min_gap_hours=rec.period_336h_min_hours,
@@ -579,10 +621,8 @@ def validate_cumulative(
                 window_hours=336,
                 as_of_utc=as_of_utc,
             )
-        elif summary is not None:
-            result = _get_summary(summary, "recovery_36h_block_in_336h")
         else:
-            result = None
+            result = _get_summary(summary, "recovery_36h_block_in_336h")
 
         _add_check(
             checks, violations, notes,
@@ -605,7 +645,10 @@ def validate_cumulative(
         )
 
     if rec.period_504h_min_hours is not None:
-        if recs is not None:
+        prior = _get_summary(baseline_summary, "recovery_72h_block_in_504h")
+        if prior is not None:
+            result = prior
+        elif recs is not None:
             result = _find_recovery_block(
                 recs,
                 min_gap_hours=rec.period_504h_min_hours,
@@ -613,10 +656,8 @@ def validate_cumulative(
                 window_hours=504,
                 as_of_utc=as_of_utc,
             )
-        elif summary is not None:
-            result = _get_summary(summary, "recovery_72h_block_in_504h")
         else:
-            result = None
+            result = _get_summary(summary, "recovery_72h_block_in_504h")
 
         _add_check(
             checks, violations, notes,
@@ -641,13 +682,18 @@ def validate_cumulative(
     # ── Days off checks ───────────────────────────────────────────────
 
     if rec.period_28d_days_off is not None:
-        if recs is not None:
+        prior = _get_summary(baseline_summary, "days_off_in_28d")
+        if prior is not None:
+            actual_days_off = prior
+            notes.append(
+                f"days_off_in_28d: taken from prior_summary ({prior}) rather "
+                "than derived from supplied events."
+            )
+        elif recs is not None:
             ws = as_of_utc - timedelta(days=28)
             actual_days_off = _count_days_off(recs, ws, as_of_utc)
-        elif _get_summary(summary, "days_off_in_28d") is not None:
-            actual_days_off = _get_summary(summary, "days_off_in_28d")
         else:
-            actual_days_off = None
+            actual_days_off = _get_summary(summary, "days_off_in_28d")
 
         _add_check(
             checks, violations, notes,
@@ -670,13 +716,14 @@ def validate_cumulative(
         )
 
     if rec.period_384h_days_off is not None:
-        if recs is not None:
+        prior = _get_summary(baseline_summary, "days_off_in_384h")
+        if prior is not None:
+            actual_days_off = prior
+        elif recs is not None:
             ws = as_of_utc - timedelta(hours=384)
             actual_days_off = _count_days_off(recs, ws, as_of_utc)
-        elif _get_summary(summary, "days_off_in_384h") is not None:
-            actual_days_off = _get_summary(summary, "days_off_in_384h")
         else:
-            actual_days_off = None
+            actual_days_off = _get_summary(summary, "days_off_in_384h")
 
         _add_check(
             checks, violations, notes,

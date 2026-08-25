@@ -7,7 +7,13 @@ POST /calculate/min-off-duty — Minimum off-duty period calculator
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.models._validators import (
+    require_duration_agrees,
+    require_end_after_start,
+    validate_utc_offset,
+)
 
 
 # ─── Common enumerations ──────────────────────────────────────────────
@@ -32,6 +38,11 @@ class AcclimatisationInput(BaseModel):
         default=None,
         description="UTC offset of the acclimatised time zone (hours). Required when state='acclimatised' under Appendix 2.",
     )
+
+    @field_validator("acclimatised_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "acclimatised_time_offset_hours")
 
 
 class InFlightRestEntry(BaseModel):
@@ -71,6 +82,18 @@ class SplitDutyInput(BaseModel):
         default=None,
         description="Whether the rest period overlaps the 2300-0529 local time window.",
     )
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "SplitDutyInput":
+        require_end_after_start(
+            self.rest_start_utc, self.rest_end_utc,
+            "rest_start_utc", "rest_end_utc",
+        )
+        require_duration_agrees(
+            self.rest_start_utc, self.rest_end_utc, self.duration_hours,
+            "duration_hours", "rest_start_utc", "rest_end_utc",
+        )
+        return self
 
 
 class MaxFdpRequest(BaseModel):
@@ -113,6 +136,11 @@ class MaxFdpRequest(BaseModel):
         default=None,
         description="Duration of preceding off-duty period in hours. Required for Appendix 2 unknown acclimatisation table lookup.",
     )
+
+    @field_validator("local_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "local_time_offset_hours")
 
     model_config = {
         "json_schema_extra": {
@@ -249,6 +277,17 @@ class PrecedingFdpInput(BaseModel):
         default=0, ge=0,
         description="Hours of extension applied.",
     )
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "PrecedingFdpInput":
+        require_end_after_start(
+            self.start_utc, self.end_utc, "start_utc", "end_utc",
+        )
+        require_duration_agrees(
+            self.start_utc, self.end_utc, self.duration_hours,
+            "duration_hours", "start_utc", "end_utc",
+        )
+        return self
 
 
 class PrecedingOffDutyInput(BaseModel):

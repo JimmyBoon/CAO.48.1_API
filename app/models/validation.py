@@ -11,7 +11,14 @@ POST /validate/roster     — Full roster validation
 from datetime import datetime
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.models._validators import (
+    require_duration_agrees,
+    require_end_after_start,
+    require_events_ordered,
+    validate_utc_offset,
+)
 
 from app.models.calculation import (
     AcclimState,
@@ -186,6 +193,19 @@ class ValidateFdpRequest(BaseModel):
         ),
     )
 
+    @field_validator("local_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "local_time_offset_hours")
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "ValidateFdpRequest":
+        require_end_after_start(
+            self.fdp_start_utc, self.fdp_end_utc,
+            "fdp_start_utc", "fdp_end_utc",
+        )
+        return self
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -288,6 +308,19 @@ class FdpHistoryRecord(BaseModel):
             "If omitted, local-night checks are skipped with a data_unavailable note."
         ),
     )
+
+    @field_validator("local_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "local_time_offset_hours")
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "FdpHistoryRecord":
+        require_end_after_start(
+            self.fdp_start_utc, self.fdp_end_utc,
+            "fdp_start_utc", "fdp_end_utc",
+        )
+        return self
 
 
 class CumulativeSummaryInput(BaseModel):
@@ -443,6 +476,19 @@ class SequenceFdpEvent(BaseModel):
     )
     sectors: int = Field(ge=1, description="Number of sectors (flights) in this FDP.")
 
+    @field_validator("local_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "local_time_offset_hours")
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "SequenceFdpEvent":
+        require_end_after_start(
+            self.fdp_start_utc, self.fdp_end_utc,
+            "fdp_start_utc", "fdp_end_utc",
+        )
+        return self
+
 
 class SequenceOdpEvent(BaseModel):
     """An off-duty period within a duty sequence."""
@@ -457,6 +503,17 @@ class SequenceOdpEvent(BaseModel):
         default="away",
         description="Whether the off-duty period is at home base or away.",
     )
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "SequenceOdpEvent":
+        require_end_after_start(
+            self.start_utc, self.end_utc, "start_utc", "end_utc",
+        )
+        require_duration_agrees(
+            self.start_utc, self.end_utc, self.duration_hours,
+            "duration_hours", "start_utc", "end_utc",
+        )
+        return self
 
 
 SequenceEvent = Annotated[
@@ -477,6 +534,11 @@ class ValidateSequenceRequest(BaseModel):
             "The sequence should cover the full roster window being validated."
         ),
     )
+
+    @field_validator("events")
+    @classmethod
+    def _check_ordered(cls, v):
+        return require_events_ordered(v)
 
     model_config = {
         "json_schema_extra": {
@@ -557,6 +619,19 @@ class RosterFdpEvent(BaseModel):
         description="Whether this is a single-pilot operation.",
     )
 
+    @field_validator("local_time_offset_hours")
+    @classmethod
+    def _check_offset(cls, v):
+        return validate_utc_offset(v, "local_time_offset_hours")
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "RosterFdpEvent":
+        require_end_after_start(
+            self.fdp_start_utc, self.fdp_end_utc,
+            "fdp_start_utc", "fdp_end_utc",
+        )
+        return self
+
 
 class RosterOdpEvent(BaseModel):
     """An off-duty period within a roster."""
@@ -576,6 +651,17 @@ class RosterOdpEvent(BaseModel):
         description="Whether the off-duty period is at home base or away.",
     )
 
+    @model_validator(mode="after")
+    def _check_times(self) -> "RosterOdpEvent":
+        require_end_after_start(
+            self.start_utc, self.end_utc, "start_utc", "end_utc",
+        )
+        require_duration_agrees(
+            self.start_utc, self.end_utc, self.duration_hours,
+            "duration_hours", "start_utc", "end_utc",
+        )
+        return self
+
 
 class RosterRestDayEvent(BaseModel):
     """An explicit planned rest day (free day) within a roster."""
@@ -591,6 +677,13 @@ class RosterRestDayEvent(BaseModel):
         default=True,
         description="True if the rest period includes a local night.",
     )
+
+    @model_validator(mode="after")
+    def _check_times(self) -> "RosterRestDayEvent":
+        require_end_after_start(
+            self.start_utc, self.end_utc, "start_utc", "end_utc",
+        )
+        return self
 
 
 RosterEvent = Annotated[
@@ -686,6 +779,19 @@ class ValidateRosterRequest(BaseModel):
             "Used as a fallback when a full prior FDP log is unavailable."
         ),
     )
+
+    @field_validator("events")
+    @classmethod
+    def _check_ordered(cls, v):
+        return require_events_ordered(v)
+
+    @model_validator(mode="after")
+    def _check_window(self) -> "ValidateRosterRequest":
+        require_end_after_start(
+            self.roster_start_utc, self.roster_end_utc,
+            "roster_start_utc", "roster_end_utc",
+        )
+        return self
 
     model_config = {
         "json_schema_extra": {
