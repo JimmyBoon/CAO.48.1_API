@@ -365,7 +365,13 @@ class PrecedingFdpInput(BaseModel):
         default=0, ge=0,
         description="Additional duty time after FDP end (e.g. post-flight duties).",
     )
-    location: Location = Field(description="Where the off-duty period will be taken.")
+    location: Location = Field(
+        description=(
+            "Where the off-duty period following this FDP will be taken. "
+            "Describes the same fact as the request's "
+            "`following_off_duty_location`; supply both only if they agree."
+        ),
+    )
     split_duty: Optional[PrecedingSplitDutyInput] = Field(
         default=None,
         description="Split duty rest details, if taken during this FDP.",
@@ -406,9 +412,15 @@ class MinOffDutyRequest(BaseModel):
         default=None,
         description="Details of the off-duty period before the preceding FDP. Required for reduction eligibility checks.",
     )
-    following_off_duty_location: Location = Field(
-        default="away",
-        description="Where the following off-duty period will be taken.",
+    following_off_duty_location: Optional[Location] = Field(
+        default=None,
+        description=(
+            "Where the following off-duty period will be taken. Optional: this "
+            "describes the same fact as `preceding_fdp.location`, which is "
+            "what the §8.1 / §10.1 branch reads. Supply it only to be "
+            "explicit — if it disagrees with preceding_fdp.location the "
+            "request is rejected rather than one silently winning."
+        ),
     )
     following_off_duty_includes_local_night: bool = Field(
         default=True,
@@ -437,6 +449,29 @@ class MinOffDutyRequest(BaseModel):
             "Supply with fdp_start_offset_hours to compute displacement time."
         ),
     )
+
+    @model_validator(mode="after")
+    def _check_location_agreement(self) -> "MinOffDutyRequest":
+        """
+        `following_off_duty_location` and `preceding_fdp.location` describe the
+        same fact: where the following off-duty period is taken. Only the
+        latter drove the §8.1/§10.1 branch, so a caller who set the former
+        alone got the default silently applied. Rather than change which field
+        wins — which would move every existing caller's answer — a
+        disagreement is now rejected. Agreement is unambiguous either way.
+        """
+        if (
+            self.following_off_duty_location is not None
+            and self.following_off_duty_location != self.preceding_fdp.location
+        ):
+            raise ValueError(
+                "following_off_duty_location "
+                f"({self.following_off_duty_location!r}) and "
+                f"preceding_fdp.location ({self.preceding_fdp.location!r}) "
+                "describe the same thing — where the off-duty period is taken "
+                "— and must agree. Omit one of them."
+            )
+        return self
 
     @field_validator("fdp_start_offset_hours")
     @classmethod

@@ -15,11 +15,17 @@ APPENDICES = ["1", "2", "3", "4", "4A", "4B", "5", "5A", "6"]
 
 # ─── Minimal valid bodies per appendix ────────────────────────────────
 # FDP start = 0600 local (+8), 4h duration — safely within all limits.
+# 0700 local at +8. Amended in Phase 5 (S10): this started 0600 local, which
+# is before the 0700 boundary in Appendix 1 §2.1(a). That boundary is the
+# earlier of morning civil twilight and 0700, and twilight needs a position
+# this API is not given — so an earlier start leaves the check
+# data_unavailable rather than passed. 0700 keeps every appendix exercising
+# its FDP limit rather than Appendix 1's window rule.
 _VALIDATE_FDP_BODIES = {
     appendix: {
         "appendix": appendix,
-        "fdp_start_utc": "2026-03-28T22:00:00Z",
-        "fdp_end_utc": "2026-03-29T02:00:00Z",   # 4h
+        "fdp_start_utc": "2026-03-28T23:00:00Z",
+        "fdp_end_utc": "2026-03-29T03:00:00Z",   # 4h
         "local_time_offset_hours": 8,
         "sectors": 1,
     }

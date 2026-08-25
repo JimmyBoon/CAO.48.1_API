@@ -181,7 +181,9 @@ class TestS2AugmentedConditions:
         assert rest["status"] == "data_unavailable"
         assert rest["passed"] is None       # explicitly not True
         assert body["checks_skipped"] >= 1
-        assert body["valid"] is False       # incomplete is not compliant
+        assert not [v for v in body["violations"] if "in_flight_rest" in v["check"]], (
+            "an unevaluated condition must not be reported as a breach"
+        )
 
     def test_unverifiable_conditions_are_surfaced_not_claimed(self):
         body = validate_fdp(actual_flight_time_hours=16, augmented_crew=crew(rest=self.REST))
@@ -286,7 +288,10 @@ class TestS53fii:
         check = next(c for c in body["checks"] if c["check"] == "augmented_two_sector_over_14h")
         assert check["status"] == "data_unavailable"
         assert check["passed"] is None
-        assert body["valid"] is False
+        # `valid` tracks violations only; the incompleteness shows in
+        # checks_skipped and the accompanying warning.
+        assert body["checks_skipped"] >= 1
+        assert any("not a complete assessment" in w.lower() for w in body["warnings"])
 
     def test_does_not_apply_at_or_below_14h(self):
         body = validate_fdp(

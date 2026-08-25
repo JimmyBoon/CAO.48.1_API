@@ -25,7 +25,9 @@ def min_off_duty(**overrides):
             "duration_hours": 12,
             "location": "away",
         },
-        "following_off_duty_location": "away",
+        # following_off_duty_location deliberately omitted: it describes the
+        # same fact as preceding_fdp.location, and supplying a conflicting
+        # value is now a 422 rather than being silently ignored.
     }
     body.update(overrides)
     response = client.post(f"{BASE}/calculate/min-off-duty", json=body)

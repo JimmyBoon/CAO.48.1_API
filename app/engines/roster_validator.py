@@ -437,6 +437,15 @@ def validate_roster(
     all_violations.extend(cum_violations)
 
     # ── Summary ───────────────────────────────────────────────────────
+    cum_skipped = cum_result.get("checks_skipped", 0)
+    if cum_skipped:
+        warnings.append(
+            f"{cum_skipped} cumulative check(s) could not be established from "
+            "the supplied data — see cumulative_result.checks for which. This "
+            "roster has not been shown to be compliant; it has been shown not "
+            "to breach the checks that could run."
+        )
+
     summary = {
         "total_fdps": fdp_index,
         "total_off_duty_periods": odp_index,
@@ -448,9 +457,15 @@ def validate_roster(
         "sequence_violations": len(sequence_violations),
         "cumulative_violations": len(cum_violations),
         "total_violations": len(all_violations),
+        "checks_run": cum_result.get("checks_run", 0),
+        "checks_skipped": cum_skipped,
     }
 
     return {
+        # `valid` tracks violations only. Rosters are routinely validated
+        # without prior history, so a cumulative window that could not be
+        # established is reported through summary.checks_skipped and a
+        # warning rather than by failing the roster.
         "valid": len(all_violations) == 0,
         "appendix": appendix_upper,
         "roster_start_utc": _to_utc(roster_start_utc),

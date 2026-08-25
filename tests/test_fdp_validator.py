@@ -42,15 +42,24 @@ class TestFdpValidatorPassingCases:
         assert result["valid"] is True
 
     def test_appendix1_within_limit(self):
-        """9h FDP against 9h limit for Appendix 1 (0600 local) — passes."""
+        """
+        9h FDP against the 9h Appendix 1 limit, starting 0700 local.
+
+        Amended in Phase 5 (S10): this started 0600 local. §2.1(a) confines an
+        Appendix 1 FDP to at or after the earlier of morning civil twilight and
+        0700 local. Twilight needs a position this API is not given, so a start
+        before 0700 now leaves that check data_unavailable — not a violation,
+        but not a pass either. Moved to 0700 so the test exercises the FDP
+        limit rather than the window rule; the window rule has its own tests.
+        """
         result = validate_fdp(
             appendix="1",
-            fdp_start_utc="2026-03-28T22:00:00Z",
-            fdp_end_utc="2026-03-29T07:00:00Z",       # 9h
+            fdp_start_utc="2026-03-28T23:00:00Z",     # 0700 local at +8
+            fdp_end_utc="2026-03-29T08:00:00Z",       # 9h
             local_time_offset_hours=8,
             sectors=1,
         )
-        assert result["valid"] is True
+        assert result["valid"] is True, result["violations"]
 
     def test_calculation_notes_forwarded(self):
         """calculation_notes from the FDP calculator should appear in the result."""
@@ -262,10 +271,12 @@ class TestAllAppendices:
 
     def test_all_appendices_within_limit(self):
         for appendix, extra in self._PARAMS.items():
+            # 0700 local at +8: inside Appendix 1's §2.1 window, so the
+            # window rule does not mask the limit under test.
             result = validate_fdp(
                 appendix=appendix,
-                fdp_start_utc="2026-03-28T22:00:00Z",
-                fdp_end_utc="2026-03-29T02:00:00Z",   # 4h — well within any limit
+                fdp_start_utc="2026-03-28T23:00:00Z",
+                fdp_end_utc="2026-03-29T03:00:00Z",   # 4h — well within any limit
                 local_time_offset_hours=8,
                 sectors=1,
                 **extra,

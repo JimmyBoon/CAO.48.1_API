@@ -75,13 +75,20 @@ def _add_check(
         {
             "check": check_id,
             "passed": passed,
+            "status": (
+                "data_unavailable" if passed is None
+                else "passed" if passed else "failed"
+            ),
             "clause": clause,
             "actual": actual,
             "limit": limit,
             "detail": detail,
         }
     )
-    if not passed:
+    # `passed is False`, not `not passed`: a data_unavailable check
+    # carries passed=None, and None is falsy. Treating it as a
+    # failure would turn "could not check" into "breached".
+    if passed is False:
         violations.append(
             {
                 "check": check_id,
@@ -109,6 +116,11 @@ def _merge_result(
 
 
 # ─── Public API ───────────────────────────────────────────────────────
+
+def _local_minutes(dt: datetime, offset_hours: float) -> int:
+    """Local minutes from midnight for a UTC instant at a given offset."""
+    return (dt.hour * 60 + dt.minute + int(offset_hours * 60)) % 1440
+
 
 def validate_sequence(
     appendix: str,
@@ -147,6 +159,11 @@ def validate_sequence(
 
     # For the cumulative check at sequence end
     fdp_history: list[dict] = []
+
+    # Appendix 1 §2.5: an FDP finishing after 2200 local is a "late FDP", and
+    # not more than 3 may be assigned in any 168 consecutive hours. Tracked as
+    # (end_utc) for each late FDP so the rolling window can be counted.
+    late_fdp_ends: list = []
 
     # For the ODP validator: track preceding FDP duration
     preceding_fdp_hours: Optional[float] = None
@@ -254,6 +271,41 @@ def validate_sequence(
             # until an ODP event updates it.
             last_odp_had_local_night = False
 
+            # ── Appendix 1 §2.5 — late FDPs in any 168 consecutive hours ──
+            late_rules = FDP_CONFIGS.get(appendix_upper)
+            if late_rules is not None and late_rules.late_fdp_after_local_minutes is not None:
+                end_local = _local_minutes(fdp_end, offset)
+                threshold = late_rules.late_fdp_after_local_minutes
+                # "finishes after 2200 hours local time" — the window runs to
+                # local midnight, so an end between 2200 and 2400 is late.
+                if end_local > threshold:
+                    late_fdp_ends.append(fdp_end)
+                    window_start = fdp_end - timedelta(hours=168)
+                    in_window = [e for e in late_fdp_ends if e > window_start]
+                    permitted = late_rules.late_fdp_max_in_168h
+                    _add_check(
+                        checks, violations,
+                        check_id=f"{label}: late_fdps_in_168h",
+                        passed=len(in_window) <= permitted,
+                        clause=late_rules.clause_late_fdp,
+                        actual=float(len(in_window)),
+                        limit=float(permitted),
+                        detail=(
+                            f"FDP {fdp_index} finishes "
+                            f"{end_local // 60:02d}{end_local % 60:02d} local, "
+                            f"after {threshold // 60:02d}{threshold % 60:02d} — a "
+                            f"late FDP. {len(in_window)} late FDP(s) in the "
+                            f"preceding 168 hours; {late_rules.clause_late_fdp} "
+                            f"permits not more than {permitted}."
+                        ),
+                        remediation=(
+                            "Reschedule so that no more than "
+                            f"{permitted} FDPs finish after "
+                            f"{threshold // 60:02d}{threshold % 60:02d} local in "
+                            "any 168 consecutive hours."
+                        ),
+                    )
+
             # Accumulate for cumulative check
             fdp_hours = (fdp_end - fdp_start).total_seconds() / 3600
             preceding_fdp_hours = fdp_hours
@@ -340,7 +392,15 @@ def validate_sequence(
             notes.append(f"Cumulative check skipped — {exc}")
 
     return {
+        # See fdp_validator: `valid` tracks violations only; incompleteness
+        # is reported through checks_skipped.
         "valid": len(violations) == 0,
+        "checks_run": len([
+            c for c in checks if c.get("status") != "data_unavailable"
+        ]),
+        "checks_skipped": len([
+            c for c in checks if c.get("status") == "data_unavailable"
+        ]),
         "appendix": appendix_upper,
         "violations": violations,
         "checks": checks,

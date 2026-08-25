@@ -132,6 +132,31 @@ def calculate_max_fdp(
             })
         post_split_max = sd_result.get("post_split_max")
 
+    # ─── Appendix 1 §2.1(b) — the FDP must end by 0100 local next day ──
+    if config.fdp_window_end_local_minutes is not None:
+        remaining = _hours_until_local(
+            local_minutes, config.fdp_window_end_local_minutes,
+        )
+        if running_total > remaining:
+            reduction = running_total - remaining
+            running_total = remaining
+            adjustments.append({
+                "clause": config.clause_fdp_window_end,
+                "description": (
+                    f"FDP must end no later than "
+                    f"{config.fdp_window_end_local_minutes // 60:02d}"
+                    f"{config.fdp_window_end_local_minutes % 60:02d} local on the "
+                    f"following day: {remaining}h remain from a "
+                    f"{local_hhmm} start"
+                ),
+                "adjustment_hours": -reduction,
+                "running_total_hours": running_total,
+            })
+            notes.append(
+                f"{config.clause_fdp_window_end} caps this FDP at {remaining}h — "
+                f"the time remaining until 0100 local at the commencing location."
+            )
+
     # ─── Appendix 2 §5.3 sector ceiling ───────────────────────────
     # §5.1/§5.2 permit the Table 5.1/5.2 limits "but only if the conditions in
     # subclause 5.3 are met", and §5.3(f)(i)/(g)(i) drive the ceiling DOWN as
@@ -311,6 +336,20 @@ def _utc_to_local_minutes(dt: datetime, offset_hours: float) -> int:
     validate_utc_offset(offset_hours, "local_time_offset_hours")
     total_minutes = dt.hour * 60 + dt.minute + int(offset_hours * 60)
     return total_minutes % 1440  # midnight wrap
+
+
+def _hours_until_local(start_local_minutes: int, boundary_local_minutes: int) -> float:
+    """
+    Hours from a local start time to the next occurrence of a local boundary.
+
+    Appendix 1 §2.1(b) fixes the boundary at 0100 local on the following day,
+    measured at the location where the FDP commenced, so the offset does not
+    change mid-FDP.
+    """
+    delta = boundary_local_minutes - start_local_minutes
+    if delta <= 0:
+        delta += 1440
+    return round(delta / 60, 4)
 
 
 def _select_table(

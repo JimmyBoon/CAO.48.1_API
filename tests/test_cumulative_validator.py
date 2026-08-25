@@ -141,25 +141,64 @@ class TestAppendix4ASpecifics:
         assert result["valid"] is True
 
 
-class TestAppendix4BTripleRecovery:
-    """Appendix 4B has 168h, 336h, and 504h recovery requirements."""
+class TestAppendix4BRecovery:
+    """
+    Appendix 4B §5.4 offers the 336-hour and 504-hour blocks as ALTERNATIVES:
+    "Before beginning an FDP or standby, an FCM must have had at least 1 of
+    the following". §5.3's 168-hour block is separate and conditional.
 
-    def test_504h_recovery_missing(self):
+    Amended in Phase 5: this class previously asserted all three were
+    independently required, so a roster satisfying §5.4(a) but not §5.4(b)
+    was reported as violating — a false violation that would block a lawful
+    roster.
+    """
+
+    BASE = {
+        "flight_time_28d_hours": 80.0,
+        "flight_time_365d_hours": 800.0,
+        "duty_time_168h_hours": 50.0,
+        "duty_time_336h_hours": 90.0,
+    }
+
+    def test_either_limb_discharges_the_requirement(self):
+        for limbs in (
+            {"recovery_36h_block_in_336h": True, "recovery_72h_block_in_504h": False},
+            {"recovery_36h_block_in_336h": False, "recovery_72h_block_in_504h": True},
+        ):
+            result = validate_cumulative(
+                appendix="4B",
+                as_of_utc=_utc("2026-03-20T00:00:00Z"),
+                summary={**self.BASE, **limbs},
+            )
+            assert result["valid"] is True, result["violations"]
+
+    def test_neither_limb_is_a_violation(self):
         result = validate_cumulative(
             appendix="4B",
             as_of_utc=_utc("2026-03-20T00:00:00Z"),
             summary={
-                "flight_time_28d_hours": 80.0,
-                "flight_time_365d_hours": 800.0,
-                "duty_time_168h_hours": 50.0,
-                "duty_time_336h_hours": 90.0,
-                "recovery_36h_block_in_168h": True,
-                "recovery_36h_block_in_336h": True,
+                **self.BASE,
+                "recovery_36h_block_in_336h": False,
                 "recovery_72h_block_in_504h": False,
             },
         )
         assert result["valid"] is False
         assert any(v["check"] == "recovery_72h_3ln_in_504h" for v in result["violations"])
+
+    def test_conditional_168h_block_is_not_asserted_as_a_check(self):
+        """
+        §5.3 applies only where the FCM conducted 3+ late-night FDPs or an
+        increased FDP — a trigger this API is not told about. It belongs in
+        caller-must-verify, not in checks.
+        """
+        result = validate_cumulative(
+            appendix="4B",
+            as_of_utc=_utc("2026-03-20T00:00:00Z"),
+            summary={**self.BASE, "recovery_36h_block_in_336h": True},
+        )
+        assert not [
+            c for c in result["checks"] if c["check"] == "recovery_36h_2ln_in_168h"
+        ]
 
 
 class TestAppendix5FlightTimeAndReset:
@@ -291,18 +330,30 @@ class TestFromLogWindowComputation:
         ]
         assert numeric_violations == []
 
-    def test_summary_no_log_skips_gracefully(self):
-        """Checks without data in summary are skipped (not violated)."""
+    def test_summary_no_log_reports_unevaluated_checks(self):
+        """
+        A check with no data behind it is reported as data_unavailable, not
+        as a violation and not as a pass.
+
+        Amended in Phase 5 (S9): this previously asserted the skipped check
+        was ABSENT from checks[]. Dropping it left a consumer unable to tell
+        a condition that passed from one that was never evaluated. The check
+        is now present with passed=None and status="data_unavailable" —
+        `passed` is retained, and null, so existing consumers do not crash.
+        """
         result = validate_cumulative(
             appendix="3",
             as_of_utc=_utc("2026-03-20T00:00:00Z"),
             summary={"flight_time_28d_hours": 80.0},  # only 28d provided
         )
         checks_by_id = {c["check"]: c for c in result["checks"]}
-        # 365d check was skipped — must not appear as a violation
-        assert "flight_time_365d" not in checks_by_id
-        # 28d check was run
-        assert "flight_time_28d" in checks_by_id
+
+        skipped = checks_by_id["flight_time_365d"]
+        assert skipped["status"] == "data_unavailable"
+        assert skipped["passed"] is None
+        assert not [v for v in result["violations"] if v["check"] == "flight_time_365d"]
+
+        assert checks_by_id["flight_time_28d"]["status"] == "passed"
 
 
 # ─── Helper ──────────────────────────────────────────────────────────────────

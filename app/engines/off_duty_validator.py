@@ -83,7 +83,10 @@ def validate_off_duty(
             "limit": limit,
             "detail": detail,
         })
-        if not passed:
+        # `passed is False`, not `not passed`: a data_unavailable check
+        # carries passed=None, and None is falsy. Treating it as a
+        # failure would turn "could not check" into "breached".
+        if passed is False:
             violations.append({
                 "check": check_id,
                 "clause": clause,

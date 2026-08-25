@@ -64,7 +64,12 @@ class TestValidateRosterEndpoint:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(f"{PREFIX}/validate/roster", json=_two_fdp_payload())
         assert resp.status_code == 200
-        assert resp.json()["valid"] is True
+        body = resp.json()
+        assert body["valid"] is True
+        assert body["summary"]["total_violations"] == 0
+        # Phase 5 (S9): no prior history, so the cumulative windows are
+        # data_unavailable — reported, not treated as a breach.
+        assert body["summary"]["checks_skipped"] > 0
 
     async def test_response_schema_shape(self, transport):
         async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -15,7 +15,13 @@ from datetime import datetime
 
 from app.data.fdp_tables import FDP_CONFIGS
 from app.engines.augmented_crew import evaluate_conditions
-from app.engines.fdp_calculator import calculate_max_fdp, _extension_ceiling
+from app.engines.wocl import crosses_wocl
+from app.engines.fdp_calculator import (
+    _extension_ceiling,
+    _hours_until_local,
+    _utc_to_local_minutes,
+    calculate_max_fdp,
+)
 
 
 def validate_fdp(
@@ -85,7 +91,10 @@ def validate_fdp(
             "limit": limit,
             "detail": detail,
         })
-        if not passed:
+        # `passed is False`, not `not passed`: a data_unavailable check
+        # carries passed=None, and None is falsy. Treating it as a
+        # failure would turn "could not check" into "breached".
+        if passed is False:
             violations.append({
                 "check": check_id,
                 "clause": clause,
@@ -206,6 +215,117 @@ def validate_fdp(
             "detail": calc_violation["detail"],
         })
 
+    # ─── §11.2 / §13.2 / §10.2 — consecutive WOCL infringements ───────
+    # S11 resolved as Option B. The spec preferred Option A (reject both
+    # consecutive_* parameters with a 422 pointing at /validate/sequence), but
+    # that contradicts S6, whose acceptance criteria require
+    # consecutive_early_starts to raise a §11.1 violation "on both the
+    # calculator and the validator". Rejecting it here would make that
+    # impossible. Option B removes the asymmetry the other way: both
+    # parameters are now read, so neither is accepted-and-ignored.
+    config = FDP_CONFIGS[appendix]
+    early = config.early_starts
+    if early.available and consecutive_wocl_infringements:
+        infringes = crosses_wocl(start_dt, end_dt, local_time_offset_hours)
+        total = consecutive_wocl_infringements + 1
+        if infringes:
+            within = consecutive_wocl_infringements < early.max_consecutive_wocl
+            _add_check(
+                check_id="consecutive_wocl_infringements",
+                passed=within,
+                clause=early.clause_wocl_limit,
+                actual=float(total),
+                limit=float(early.max_consecutive_wocl),
+                detail=(
+                    f"This FDP infringes the WOCL and would be consecutive "
+                    f"infringement #{total}. {early.clause_wocl_limit} prohibits "
+                    f"assigning a further WOCL-infringing FDP once "
+                    f"{early.max_consecutive_wocl} consecutive WOCLs have been "
+                    f"infringed, without an intervening off-duty period that "
+                    f"includes a local night."
+                    if not within else
+                    f"This FDP infringes the WOCL: consecutive infringement "
+                    f"#{total} of {early.max_consecutive_wocl} permitted "
+                    f"({early.clause_wocl_limit})."
+                ),
+                remediation=(
+                    "Insert an off-duty period that includes a local night "
+                    "before assigning a further WOCL-infringing FDP, or "
+                    "reschedule this FDP clear of 0200-0559 local."
+                    if not within else ""
+                ),
+            )
+        else:
+            limits["calculation_notes"].append(
+                f"consecutive_wocl_infringements={consecutive_wocl_infringements} "
+                f"supplied, but this FDP does not infringe the WOCL, so "
+                f"{early.clause_wocl_limit} does not bite."
+            )
+
+    # ─── Appendix 1 §2.1 — the FDP must fall inside the daily window ──
+    if config.fdp_window_end_local_minutes is not None:
+        local_start = _utc_to_local_minutes(start_dt, local_time_offset_hours)
+        boundary = config.fdp_window_end_local_minutes
+        permitted = _hours_until_local(local_start, boundary)
+        boundary_label = f"{boundary // 60:02d}{boundary % 60:02d}"
+        within = actual_fdp_hours <= permitted
+        _add_check(
+            check_id="fdp_within_daily_window",
+            passed=within,
+            clause=config.clause_fdp_window_end,
+            actual=round(actual_fdp_hours, 4),
+            limit=permitted,
+            detail=(
+                f"FDP starting {local_start // 60:02d}{local_start % 60:02d} local "
+                f"must end no later than {boundary_label} local on the following "
+                f"day at the commencing location, leaving {permitted}h. Actual "
+                f"FDP {actual_fdp_hours:.2f}h."
+            ),
+            remediation=(
+                f"Reduce the FDP to {permitted}h, or move the start earlier."
+                if not within else ""
+            ),
+        )
+
+        # §2.1(a) is "the earlier of morning civil twilight or 0700". Because
+        # it is the EARLIER of the two, a start at or after 0700 satisfies it
+        # whatever twilight was that day. An earlier start turns on a position
+        # this API is not given, so it is reported as unavailable rather than
+        # guessed — assuming 0700 would fail lawful early starts that §2.3
+        # expressly contemplates.
+        window_start = config.fdp_window_start_local_minutes
+        if window_start is not None:
+            if local_start >= window_start:
+                _add_check(
+                    check_id="fdp_starts_within_window",
+                    passed=True,
+                    clause=config.clause_fdp_window_start,
+                    actual=None, limit=None,
+                    detail=(
+                        f"FDP starts at or after "
+                        f"{window_start // 60:02d}{window_start % 60:02d} local, "
+                        f"so it is at or after the earlier of morning civil "
+                        f"twilight and that time."
+                    ),
+                )
+            else:
+                _add_check(
+                    check_id="fdp_starts_within_window",
+                    passed=None,
+                    status="data_unavailable",
+                    clause=config.clause_fdp_window_start,
+                    actual=None, limit=None,
+                    detail=(
+                        f"FDP starts before "
+                        f"{window_start // 60:02d}{window_start % 60:02d} local. "
+                        f"{config.clause_fdp_window_start} permits this only from "
+                        f"the beginning of morning civil twilight, which depends "
+                        f"on the location and date and is not supplied to this "
+                        f"API. Not verified — confirm the start is at or after "
+                        f"morning civil twilight."
+                    ),
+                )
+
     # ─── Appendix 2 §5.3 — augmented crew conditions ──────────────────
     # §5.1/§5.2 permit the Table 5.1/5.2 limits "but only if the conditions in
     # subclause 5.3 are met". Without this the tables were applied with none
@@ -253,10 +373,13 @@ def validate_fdp(
         )
 
     return {
-        # A skipped check means compliance was not established. Reporting
-        # valid=true on an incomplete assessment is the failure mode this
-        # remediation exists to remove.
-        "valid": len(violations) == 0 and not skipped,
+        # `valid` tracks violations only. A skipped check means the assessment
+        # is incomplete, not that something is wrong — and validating a roster
+        # without prior history is an ordinary thing to do, so flagging it as
+        # invalid would cry wolf on the common case. Incompleteness is carried
+        # by checks_skipped and the accompanying warning; a caller who needs a
+        # complete assessment reads those.
+        "valid": len(violations) == 0,
         "appendix": appendix,
         "checks_run": len(checks) - len(skipped),
         "checks_skipped": len(skipped),

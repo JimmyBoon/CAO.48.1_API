@@ -100,10 +100,14 @@ class ValidationResponse(BaseModel):
     """
     Validation result showing all checks run and any violations found.
 
-    `valid` is True only when every check that ran passed AND no check had to
-    be skipped. A skipped check means the API could not establish compliance,
-    which is not the same as establishing it — reporting `valid: true` on an
-    incomplete assessment is the failure mode this API is being corrected for.
+    `valid` reports whether anything was BREACHED: it is True when no check
+    failed. It does not report whether the assessment was complete — read
+    `checks_skipped` for that. The two are deliberately separate, because
+    validating without full prior history is an ordinary thing to do and a
+    verdict that failed every such request would stop carrying information.
+
+    A caller who needs a complete assessment must check both:
+    `valid and checks_skipped == 0`.
 
     All checks evaluated — including those that passed — are included in the
     `checks` list for full auditability.
@@ -111,9 +115,10 @@ class ValidationResponse(BaseModel):
 
     valid: bool = Field(
         description=(
-            "True only if every check that ran passed and none were skipped. "
-            "Read alongside checks_skipped: a response with skipped checks is "
-            "not a complete assessment."
+            "True if no check failed. This is a statement about breaches, not "
+            "about completeness — a check that could not be evaluated does not "
+            "make this False. For a complete assessment, require "
+            "`valid and checks_skipped == 0`."
         ),
     )
     checks_run: int = Field(
@@ -123,7 +128,9 @@ class ValidationResponse(BaseModel):
         default=0,
         description=(
             "Number of checks that could not be evaluated from the supplied "
-            "data. Non-zero means this response is not a complete assessment."
+            "data. Non-zero means this response is not a complete assessment: "
+            "nothing in those checks was found to breach, but nothing was "
+            "established either. Not reflected in `valid`."
         ),
     )
     appendix: str = Field(description="Appendix used for validation.")
@@ -284,9 +291,15 @@ class ValidateOffDutyRequest(BaseModel):
             "Required to evaluate reduction eligibility (Appendices 2, 3, 4)."
         ),
     )
-    following_off_duty_location: Location = Field(
-        default="away",
-        description="Where the off-duty period is being taken.",
+    following_off_duty_location: Optional[Location] = Field(
+        default=None,
+        description=(
+            "Where the following off-duty period will be taken. Optional: this "
+            "describes the same fact as `preceding_fdp.location`, which is "
+            "what the §8.1 / §10.1 branch reads. Supply it only to be "
+            "explicit — if it disagrees with preceding_fdp.location the "
+            "request is rejected rather than one silently winning."
+        ),
     )
     following_off_duty_includes_local_night: bool = Field(
         default=True,
@@ -308,8 +321,32 @@ class ValidateOffDutyRequest(BaseModel):
     )
     acclimatisation_state: AcclimState = Field(
         default="not_applicable",
-        description="Acclimatisation state (for displacement time calculation under Appendix 2).",
+        description=(
+            "Acclimatisation state. Under Appendix 2 an unknown state selects "
+            "§10.1(c) / §10.2(b) and blocks the §10.4 reduction via §10.4(c)."
+        ),
     )
+
+    @model_validator(mode="after")
+    def _check_location_agreement(self) -> "ValidateOffDutyRequest":
+        """
+        Same fact, two fields — see MinOffDutyRequest. Only
+        preceding_fdp.location drove the location branch, so a caller setting
+        following_off_duty_location alone had it silently ignored. A
+        disagreement is now rejected rather than resolved arbitrarily.
+        """
+        if (
+            self.following_off_duty_location is not None
+            and self.following_off_duty_location != self.preceding_fdp.location
+        ):
+            raise ValueError(
+                "following_off_duty_location "
+                f"({self.following_off_duty_location!r}) and "
+                f"preceding_fdp.location ({self.preceding_fdp.location!r}) "
+                "describe the same thing — where the off-duty period is taken "
+                "— and must agree. Omit one of them."
+            )
+        return self
 
     model_config = {
         "json_schema_extra": {
@@ -797,6 +834,22 @@ class RosterSummary(BaseModel):
     sequence_violations: int = Field(description="Number of sequence-level violations (§13.2, consecutive starts).")
     cumulative_violations: int = Field(description="Number of cumulative limit violations.")
     total_violations: int = Field(description="Total number of distinct violations across all checks.")
+    checks_run: int = Field(
+        default=0,
+        description="Cumulative checks actually evaluated against supplied data.",
+    )
+    checks_skipped: int = Field(
+        default=0,
+        description=(
+            "Cumulative checks that could not be established because the "
+            "lookback window reaches back further than the supplied history. "
+            "Non-zero means this roster has not been shown to be compliant, "
+            "only shown not to breach the checks that could run — which is "
+            "the normal outcome when no prior history is supplied. Not "
+            "reflected in `valid`. Supply a prior_fdp_log or prior_summary to "
+            "resolve them."
+        ),
+    )
 
 
 class ValidateRosterRequest(BaseModel):

@@ -168,21 +168,31 @@ def _count_days_off(
     recs: list[_Rec],
     window_start: datetime,
     window_end: datetime,
+    coverage_start: Optional[datetime] = None,
 ) -> int:
     """
-    Count calendar days (local midnight boundaries) completely free of duty
-    within [window_start, window_end).  Uses UTC days as proxy when offset
-    data is unavailable.
+    Count calendar days completely free of duty within the window.
+
+    Counting is clamped to the period the supplied data actually covers. A day
+    before the earliest supplied event is not a day off — it is a day about
+    which nothing is known, and treating the two alike is what produced
+    "26 days off in the previous 28 days" for a 2-day roster with no history.
+
+    Uses UTC days as a proxy when offset data is unavailable.
     """
+    effective_start = window_start
+    if coverage_start is not None and coverage_start > window_start:
+        effective_start = coverage_start
+
     busy_days: set = set()
-    for r in _recs_in_window(recs, window_start, window_end):
+    for r in _recs_in_window(recs, effective_start, window_end):
         cursor = r.start.date()
         end_d  = r.end.date()
         while cursor <= end_d:
             busy_days.add(cursor)
             cursor = cursor + timedelta(days=1)
 
-    total_days = (window_end.date() - window_start.date()).days
+    total_days = (window_end.date() - effective_start.date()).days
     return max(0, total_days - len(busy_days))
 
 
@@ -192,6 +202,7 @@ def _find_recovery_block(
     min_local_nights: int,
     window_hours: float,
     as_of_utc: datetime,
+    coverage_start: Optional[datetime] = None,
 ) -> Optional[bool]:
     """
     Scan for a continuous off-duty gap >= min_gap_hours that contains at
@@ -203,6 +214,14 @@ def _find_recovery_block(
       None  — timezone data missing; cannot evaluate local-night requirement
     """
     window_start = as_of_utc - timedelta(hours=window_hours)
+    # Clamp the scan to the period the data covers. Empty space before the
+    # earliest supplied event is not an off-duty block; reporting one there
+    # invents a recovery period that may never have happened.
+    if coverage_start is not None and coverage_start > window_start:
+        window_start = coverage_start
+        if as_of_utc - window_start < timedelta(hours=min_gap_hours):
+            # Not enough covered time for a qualifying block to fit.
+            return False
     gaps_in_window = _recs_in_window(recs, window_start, as_of_utc)
 
     # Build gap list: bookend with window bounds
@@ -273,23 +292,53 @@ def _add_check(
     severity: str = "hard_limit",
     remediation: str = "",
     skipped: bool = False,
+    skip_reason: str = "",
 ) -> None:
-    """Append a check result and, when failing, a violation."""
+    """
+    Append a check result and, when failing, a violation.
+
+    A skipped check is REPORTED, not dropped. Removing it from `checks[]`
+    entirely — which is what happened before — leaves a consumer unable to
+    tell a condition that passed from one that was never evaluated, and makes
+    an incomplete assessment indistinguishable from a clean one.
+    """
     if skipped:
         notes.append(f"{check_id}: skipped (data_unavailable)")
+        checks.append(
+            {
+                "check": check_id,
+                "passed": None,
+                "status": "data_unavailable",
+                "clause": clause,
+                # `actual` is retained where one was computed: it is a genuine
+                # lower bound from the data supplied, and more useful to a
+                # caller than a null. `passed: None` is what stops it counting
+                # as compliance.
+                "actual": actual,
+                "limit": limit,
+                "detail": skip_reason or (
+                    f"{check_id} could not be evaluated from the data supplied. "
+                    "This is not a pass."
+                ),
+            }
+        )
         return
 
     checks.append(
         {
             "check": check_id,
             "passed": passed,
+            "status": "passed" if passed else "failed",
             "clause": clause,
             "actual": actual,
             "limit": limit,
             "detail": detail,
         }
     )
-    if not passed:
+    # `passed is False`, not `not passed`: a data_unavailable check
+    # carries passed=None, and None is falsy. Treating it as a
+    # failure would turn "could not check" into "breached".
+    if passed is False:
         if not remediation:
             remediation = f"Ensure {check_id} does not exceed {limit}."
         violations.append(
@@ -405,6 +454,65 @@ def validate_cumulative(
                 return val
         return None  # unavailable
 
+    # ─── Data coverage ────────────────────────────────────────────────
+    # A rolling window that reaches back further than the earliest supplied
+    # event is being computed over empty space. Counting that space as
+    # compliant is how a 2-day roster reported "26 days off in the previous
+    # 28 days" and "found a 36h+ off-duty block" where no such block existed.
+    #
+    # Coverage is decided per window, and the verdict depends on direction:
+    #
+    #   * Accumulating limits (flight time, duty time) can only RISE with more
+    #     data. A total that already breaches is a genuine breach; one that
+    #     does not, over an under-covered window, is unknown.
+    #   * Minimum requirements (days off, recovery blocks) can only be HELPED
+    #     by more data. A requirement already met within covered data is
+    #     genuinely met; one not met, over an under-covered window, is unknown.
+    #
+    # Either way the safe answer for an under-covered window is
+    # data_unavailable, never a pass.
+    coverage_start = recs[0].start if recs else None
+
+    def _covered(
+        window_hours: Optional[float] = None,
+        window_days: Optional[float] = None,
+        summary_field: Optional[str] = None,
+    ) -> bool:
+        """True when supplied data spans the whole lookback window."""
+        if recs is None:
+            # Pre-aggregated totals describe the whole window by construction.
+            return summary is not None and _get_summary(summary, summary_field) is not None
+        if (
+            baseline_summary is not None
+            and summary_field is not None
+            and _get_summary(baseline_summary, summary_field) is not None
+        ):
+            # A prior_summary carries the part of the window the log predates.
+            return True
+        if coverage_start is None:
+            return False
+        if window_hours is not None:
+            window_start = as_of_utc - timedelta(hours=window_hours)
+        elif window_days is not None:
+            window_start = as_of_utc - timedelta(days=window_days)
+        else:
+            return False
+        return coverage_start <= window_start
+
+    def _shortfall(window_hours=None, window_days=None) -> str:
+        """How far the window reaches beyond the supplied data."""
+        if coverage_start is None:
+            return "no history was supplied"
+        if window_hours is not None:
+            window_start = as_of_utc - timedelta(hours=window_hours)
+        else:
+            window_start = as_of_utc - timedelta(days=window_days)
+        gap = (coverage_start - window_start).total_seconds() / 3600
+        return (
+            f"the lookback window begins {gap:.0f} hours before the earliest "
+            f"supplied event ({coverage_start.isoformat()})"
+        )
+
     def _assertion_from_summary(field_name: str):
         """
         Read a whole-window assertion (days-off count, recovery boolean) from
@@ -430,7 +538,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="flight_time_168h",
             passed=val is not None and val <= ft.period_168h_hours,
-            clause="§6.1",
+            clause=ft.period_168h_clause,
             actual=round(val, 2) if val is not None else None,
             limit=ft.period_168h_hours,
             detail=(
@@ -438,7 +546,18 @@ def validate_cumulative(
                 if val is not None else "Flight time in the previous 168h"
             ),
             remediation=f"Ensure flight time in any 168h does not exceed {ft.period_168h_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= ft.period_168h_hours
+                    and not _covered(window_hours=168, summary_field="flight_time_168h_hours"))
+            ),
+            skip_reason=(
+                f"flight_time_168h could not be established: {_shortfall(window_hours=168)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {ft.period_168h_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"flight_time_168h could not be evaluated: no data for this window."
+            ),
         )
 
     if ft.period_28d_hours is not None:
@@ -451,7 +570,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="flight_time_28d",
             passed=val is not None and val <= ft.period_28d_hours,
-            clause="§5.1" if appendix == "1" else "§11.1",
+            clause=ft.period_28d_clause,
             actual=round(val, 2) if val is not None else None,
             limit=ft.period_28d_hours,
             detail=(
@@ -459,7 +578,18 @@ def validate_cumulative(
                 if val is not None else "Flight time in the previous 28 days"
             ),
             remediation=f"Ensure flight time in any 28 days does not exceed {ft.period_28d_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= ft.period_28d_hours
+                    and not _covered(window_days=28, summary_field="flight_time_28d_hours"))
+            ),
+            skip_reason=(
+                f"flight_time_28d could not be established: {_shortfall(window_days=28)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {ft.period_28d_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"flight_time_28d could not be evaluated: no data for this window."
+            ),
         )
 
     if ft.period_90d_hours is not None:
@@ -472,7 +602,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="flight_time_90d",
             passed=val is not None and val <= ft.period_90d_hours,
-            clause="§6.3",
+            clause=ft.period_90d_clause,
             actual=round(val, 2) if val is not None else None,
             limit=ft.period_90d_hours,
             detail=(
@@ -480,7 +610,18 @@ def validate_cumulative(
                 if val is not None else "Flight time in the previous 90 days"
             ),
             remediation=f"Ensure flight time in any 90 days does not exceed {ft.period_90d_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= ft.period_90d_hours
+                    and not _covered(window_days=90, summary_field="flight_time_90d_hours"))
+            ),
+            skip_reason=(
+                f"flight_time_90d could not be established: {_shortfall(window_days=90)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {ft.period_90d_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"flight_time_90d could not be evaluated: no data for this window."
+            ),
         )
 
     if ft.period_365d_hours is not None:
@@ -493,7 +634,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="flight_time_365d",
             passed=val is not None and val <= ft.period_365d_hours,
-            clause="§5.2" if appendix == "1" else "§11.2",
+            clause=ft.period_365d_clause,
             actual=round(val, 2) if val is not None else None,
             limit=ft.period_365d_hours,
             detail=(
@@ -501,7 +642,18 @@ def validate_cumulative(
                 if val is not None else "Flight time in the previous 365 days"
             ),
             remediation=f"Ensure flight time in any 365 days does not exceed {ft.period_365d_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= ft.period_365d_hours
+                    and not _covered(window_days=365, summary_field="flight_time_365d_hours"))
+            ),
+            skip_reason=(
+                f"flight_time_365d could not be established: {_shortfall(window_days=365)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {ft.period_365d_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"flight_time_365d could not be evaluated: no data for this window."
+            ),
         )
 
     if ft.period_384h_hours is not None:
@@ -514,7 +666,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="flight_time_384h",
             passed=val is not None and val <= ft.period_384h_hours,
-            clause="§5.1",
+            clause=ft.period_384h_clause,
             actual=round(val, 2) if val is not None else None,
             limit=ft.period_384h_hours,
             detail=(
@@ -522,7 +674,18 @@ def validate_cumulative(
                 if val is not None else "Flight time in the previous 384h"
             ),
             remediation=f"Ensure flight time in any 384h does not exceed {ft.period_384h_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= ft.period_384h_hours
+                    and not _covered(window_hours=384, summary_field="flight_time_384h_hours"))
+            ),
+            skip_reason=(
+                f"flight_time_384h could not be established: {_shortfall(window_hours=384)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {ft.period_384h_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"flight_time_384h could not be evaluated: no data for this window."
+            ),
         )
 
     # ── Duty time checks ──────────────────────────────────────────────
@@ -537,7 +700,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="duty_time_168h",
             passed=val is not None and val <= dt.period_168h_hours,
-            clause="§10.1" if appendix in {"3", "4", "4B", "6"} else "§12.1",
+            clause=dt.period_168h_clause,
             actual=round(val, 2) if val is not None else None,
             limit=dt.period_168h_hours,
             detail=(
@@ -545,7 +708,18 @@ def validate_cumulative(
                 if val is not None else "Duty time in the previous 168h"
             ),
             remediation=f"Ensure duty time in any 168h does not exceed {dt.period_168h_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= dt.period_168h_hours
+                    and not _covered(window_hours=168, summary_field="duty_time_168h_hours"))
+            ),
+            skip_reason=(
+                f"duty_time_168h could not be established: {_shortfall(window_hours=168)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {dt.period_168h_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"duty_time_168h could not be evaluated: no data for this window."
+            ),
         )
 
     if dt.period_336h_hours is not None:
@@ -558,7 +732,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="duty_time_336h",
             passed=val is not None and val <= dt.period_336h_hours,
-            clause="§10.2" if appendix in {"3", "4", "4B", "6"} else "§12.2",
+            clause=dt.period_336h_clause,
             actual=round(val, 2) if val is not None else None,
             limit=dt.period_336h_hours,
             detail=(
@@ -566,12 +740,41 @@ def validate_cumulative(
                 if val is not None else "Duty time in the previous 336h"
             ),
             remediation=f"Ensure duty time in any 336h does not exceed {dt.period_336h_hours}h.",
-            skipped=val is None,
+            skipped=(
+                val is None
+                or (val <= dt.period_336h_hours
+                    and not _covered(window_hours=336, summary_field="duty_time_336h_hours"))
+            ),
+            skip_reason=(
+                f"duty_time_336h could not be established: {_shortfall(window_hours=336)}. "
+                f"The {val:.2f}h computed from supplied data is a lower bound, "
+                f"so a breach of the {dt.period_336h_hours}h limit cannot be ruled out."
+                if val is not None else
+                f"duty_time_336h could not be evaluated: no data for this window."
+            ),
         )
 
     # ── Recovery block checks ─────────────────────────────────────────
 
-    if rec.period_168h_min_hours and rec.period_168h_min_hours > 0:
+    caller_must_verify: list[dict] = []
+
+    if rec.period_168h_min_hours and rec.period_168h_min_hours > 0 and rec.period_168h_trigger:
+        # Conditional requirement — the trigger is not visible to this API.
+        caller_must_verify.append({
+            "clause": rec.period_168h_clause,
+            "description": (
+                f"If {rec.period_168h_trigger}, the FCM must have an off-duty "
+                f"period of at least {rec.period_168h_min_hours:.0f} consecutive "
+                f"hours including {rec.period_168h_local_nights} local nights "
+                f"during that period."
+            ),
+        })
+        notes.append(
+            f"{rec.period_168h_clause} is conditional on a trigger this API "
+            f"cannot see; surfaced for the caller to verify rather than "
+            f"asserted as a check."
+        )
+    elif rec.period_168h_min_hours and rec.period_168h_min_hours > 0:
         prior = _get_summary(baseline_summary, "recovery_36h_block_in_168h")
         if prior is not None:
             result = prior
@@ -586,11 +789,12 @@ def validate_cumulative(
                 min_local_nights=rec.period_168h_local_nights,
                 window_hours=168,
                 as_of_utc=as_of_utc,
+                coverage_start=coverage_start,
             )
         else:
             result = _get_summary(summary, "recovery_36h_block_in_168h")
 
-        clause = "§4.1a" if appendix == "1" else "§10.5a"
+        clause = rec.period_168h_clause
         _add_check(
             checks, violations, notes,
             check_id="recovery_36h_2ln_in_168h",
@@ -600,13 +804,23 @@ def validate_cumulative(
             limit=None,
             detail=(
                 f"{'Found' if result is True else 'Missing'} required 36h+ off-duty block "
-                f"with 2 local nights in the previous 168h (§{clause})."
+                f"with 2 local nights in the previous 168h ({clause})."
             ),
             remediation=(
                 "Ensure at least one 36h+ continuous off-duty period including "
                 "2 local nights occurs in any 168h window before the next FDP."
             ),
-            skipped=result is None,
+            skipped=(
+                result is None
+                or (result is not True
+                    and not _covered(window_hours=168, summary_field="recovery_36h_block_in_168h"))
+            ),
+            skip_reason=(
+                f"recovery_36h_2ln_in_168h could not be established: "
+                f"{_shortfall(window_hours=168)}. No qualifying 36h+ off-duty block with 2 local nights was found in "
+                f"the data supplied, but the window is not fully covered, so "
+                f"its absence cannot be confirmed."
+            ),
         )
 
     if rec.period_336h_min_hours is not None:
@@ -620,6 +834,7 @@ def validate_cumulative(
                 min_local_nights=rec.period_336h_local_nights or 0,
                 window_hours=336,
                 as_of_utc=as_of_utc,
+                coverage_start=coverage_start,
             )
         else:
             result = _get_summary(summary, "recovery_36h_block_in_336h")
@@ -628,7 +843,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="recovery_36h_2ln_in_336h",
             passed=result is True,
-            clause="§5.3a",
+            clause=rec.period_336h_clause,
             actual=None,
             limit=None,
             detail=(
@@ -641,7 +856,17 @@ def validate_cumulative(
                 f"period including {rec.period_336h_local_nights or 0} local nights occurs "
                 "in any 336h window."
             ),
-            skipped=result is None,
+            skipped=(
+                result is None
+                or (result is not True
+                    and not _covered(window_hours=336, summary_field="recovery_36h_block_in_336h"))
+            ),
+            skip_reason=(
+                f"recovery_36h_2ln_in_336h could not be established: "
+                f"{_shortfall(window_hours=336)}. No qualifying off-duty block was found in "
+                f"the data supplied, but the window is not fully covered, so "
+                f"its absence cannot be confirmed."
+            ),
         )
 
     if rec.period_504h_min_hours is not None:
@@ -655,6 +880,7 @@ def validate_cumulative(
                 min_local_nights=rec.period_504h_local_nights or 0,
                 window_hours=504,
                 as_of_utc=as_of_utc,
+                coverage_start=coverage_start,
             )
         else:
             result = _get_summary(summary, "recovery_72h_block_in_504h")
@@ -663,7 +889,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="recovery_72h_3ln_in_504h",
             passed=result is True,
-            clause="§5.4",
+            clause=rec.period_504h_clause,
             actual=None,
             limit=None,
             detail=(
@@ -676,8 +902,47 @@ def validate_cumulative(
                 f"period including {rec.period_504h_local_nights or 0} local nights occurs "
                 "in any 504h window."
             ),
-            skipped=result is None,
+            skipped=(
+                result is None
+                or (result is not True
+                    and not _covered(window_hours=504, summary_field="recovery_72h_block_in_504h"))
+            ),
+            skip_reason=(
+                f"recovery_72h_3ln_in_504h could not be established: "
+                f"{_shortfall(window_hours=504)}. No qualifying off-duty block was found in "
+                f"the data supplied, but the window is not fully covered, so "
+                f"its absence cannot be confirmed."
+            ),
         )
+
+    # ── "At least 1 of the following" recovery alternatives ───────────
+    # App 4B §5.4 and App 5 §5.2 each offer two limbs and require only one.
+    # Evaluating them as two independent mandatory checks raises a violation
+    # the instrument does not support.
+    if rec.alternative_336h_504h:
+        pair = [
+            c for c in checks
+            if c["check"] in ("recovery_36h_2ln_in_336h", "recovery_72h_3ln_in_504h")
+        ]
+        if any(c["status"] == "passed" for c in pair):
+            names = {c["check"] for c in pair if c["status"] != "passed"}
+            for c in pair:
+                if c["status"] != "passed":
+                    c["status"] = "passed"
+                    c["passed"] = True
+                    c["detail"] = (
+                        (c["detail"] or "")
+                        + f" Requirement discharged by the alternative limb: "
+                          f"{rec.period_336h_clause} / {rec.period_504h_clause} "
+                          f"requires at least 1 of the two, and the other is met."
+                    )
+            if names:
+                violations[:] = [v for v in violations if v["check"] not in names]
+                notes.append(
+                    f"{rec.period_336h_clause} / {rec.period_504h_clause}: "
+                    f"at least 1 of the two limbs is satisfied, which "
+                    f"discharges the requirement."
+                )
 
     # ── Days off checks ───────────────────────────────────────────────
 
@@ -691,7 +956,7 @@ def validate_cumulative(
             )
         elif recs is not None:
             ws = as_of_utc - timedelta(days=28)
-            actual_days_off = _count_days_off(recs, ws, as_of_utc)
+            actual_days_off = _count_days_off(recs, ws, as_of_utc, coverage_start)
         else:
             actual_days_off = _get_summary(summary, "days_off_in_28d")
 
@@ -699,7 +964,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="days_off_in_28d",
             passed=actual_days_off is not None and actual_days_off >= rec.period_28d_days_off,
-            clause="§4.1b" if appendix == "1" else "§10.5b",
+clause=rec.period_28d_days_off_clause,
             actual=float(actual_days_off) if actual_days_off is not None else None,
             limit=float(rec.period_28d_days_off),
             detail=(
@@ -712,7 +977,20 @@ def validate_cumulative(
                 f"Ensure at least {rec.period_28d_days_off} days off occur in any rolling "
                 "28-day window before the next FDP."
             ),
-            skipped=actual_days_off is None,
+            skipped=(
+                actual_days_off is None
+                or (actual_days_off < rec.period_28d_days_off
+                    and not _covered(window_days=28, summary_field="days_off_in_28d"))
+            ),
+            skip_reason=(
+                f"days_off_in_28d could not be established: {_shortfall(window_days=28)}. "
+                f"Only {actual_days_off} day(s) off are visible in the "
+                f"supplied data against a requirement of {rec.period_28d_days_off}; days "
+                f"before the earliest supplied event are unknown and are not "
+                f"counted as days off."
+                if actual_days_off is not None else
+                f"days_off_in_28d could not be evaluated: no data for this window."
+            ),
         )
 
     if rec.period_384h_days_off is not None:
@@ -721,7 +999,7 @@ def validate_cumulative(
             actual_days_off = prior
         elif recs is not None:
             ws = as_of_utc - timedelta(hours=384)
-            actual_days_off = _count_days_off(recs, ws, as_of_utc)
+            actual_days_off = _count_days_off(recs, ws, as_of_utc, coverage_start)
         else:
             actual_days_off = _get_summary(summary, "days_off_in_384h")
 
@@ -729,7 +1007,7 @@ def validate_cumulative(
             checks, violations, notes,
             check_id="days_off_in_384h",
             passed=actual_days_off is not None and actual_days_off >= rec.period_384h_days_off,
-            clause="§5.1",
+            clause=rec.period_384h_days_off_clause,
             actual=float(actual_days_off) if actual_days_off is not None else None,
             limit=float(rec.period_384h_days_off),
             detail=(
@@ -742,14 +1020,46 @@ def validate_cumulative(
                 f"Ensure at least {rec.period_384h_days_off} full days off occur in any "
                 "384h (16-day) window."
             ),
-            skipped=actual_days_off is None,
+            skipped=(
+                actual_days_off is None
+                or (actual_days_off < rec.period_384h_days_off
+                    and not _covered(window_hours=384, summary_field="days_off_in_384h"))
+            ),
+            skip_reason=(
+                f"days_off_in_384h could not be established: {_shortfall(window_hours=384)}. "
+                f"Only {actual_days_off} day(s) off are visible in the "
+                f"supplied data against a requirement of {rec.period_384h_days_off}; days "
+                f"before the earliest supplied event are unknown and are not "
+                f"counted as days off."
+                if actual_days_off is not None else
+                f"days_off_in_384h could not be evaluated: no data for this window."
+            ),
+        )
+
+    skipped = [c for c in checks if c.get("status") == "data_unavailable"]
+    warnings: list[str] = []
+    if skipped:
+        warnings.append(
+            "Not a complete assessment: "
+            + ", ".join(c["check"] for c in skipped)
+            + " could not be established from the data supplied. Supply a "
+              "prior_fdp_log covering the full lookback window, or a "
+              "prior_summary, to resolve them."
         )
 
     return {
+        # `valid` tracks violations only. A skipped check means the assessment
+        # is incomplete, not that something is wrong — and validating a roster
+        # without prior history is an ordinary thing to do, so flagging it as
+        # invalid would cry wolf on the common case. Incompleteness is carried
+        # by checks_skipped and the accompanying warning; a caller who needs a
+        # complete assessment reads those.
         "valid": len(violations) == 0,
         "appendix": appendix,
+        "checks_run": len(checks) - len(skipped),
+        "checks_skipped": len(skipped),
         "violations": violations,
         "checks": checks,
-        "warnings": [],
+        "warnings": warnings,
         "calculation_notes": notes,
     }

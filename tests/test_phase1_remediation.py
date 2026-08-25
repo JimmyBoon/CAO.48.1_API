@@ -213,7 +213,9 @@ class TestS1PriorSummaryWired:
             if c["check"] == "flight_time_28d"
         )
         assert actual == pytest.approx(36.0)  # 3 x 10 prior + 6 roster
-        assert body["warnings"] == []
+        assert not [
+            w for w in body["warnings"] if "prior_summary" in w
+        ], "no ignored-field warning is due when only prior_fdp_log is supplied"
 
 
 # ═══════════════════════════════════════════════════════════════════════

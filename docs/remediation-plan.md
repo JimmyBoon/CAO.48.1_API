@@ -2,10 +2,10 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 473 passing — 26 added in
-Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4. Sixty-odd of those are pins written
-before the edits they protect. One pre-existing test was amended, in Phase 2, because it
-asserted the defect.
+**Baseline:** 270 tests passing before any change. **Now:** 565 passing — 26 added in
+Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4, 90 in Phase 5. Sixty-odd of those are
+pins written before the edits they protect. Five pre-existing tests were amended across
+Phases 2 and 5, each because it asserted a defect.
 
 ---
 
@@ -263,19 +263,91 @@ remaining endpoints.
 
 **Interim measure not needed** — `augmented_crew` is implemented, so no 422 rejection.
 
-### Phase 5 — S13, S9, S10, S11
+### Phase 5 — S13, S9, S10, S11 — **COMPLETE**
 
-- **S13** is largely done once C2 lands; this step is verifying every row of the spec's table.
-- **S9** applies C1's `data_unavailable` state to the roster and sequence paths: where a lookback
-  window extends earlier than the earliest supplied datum, the check is unavailable, not passed.
-  Add a data-coverage floor to `_count_days_off` so it stops counting unknown days as days off.
-  Appendix 5A's existing behaviour is the reference — generalise it, do not replace it.
-- **S10:** Appendix 1 §2.1(b) as a hard end-time limit, §2.1(a) on start (0700 fallback where
-  civil twilight cannot be computed, with the assumption noted), §2.5 late-FDP counting as a
-  sequence rule, and a §2.1(b)-derived cap in `/calculate/max-fdp`.
-  Leave `flight_time_limit_hours: null` alone — that is correct for Appendix 1.
-- **S11:** Option A — reject both `consecutive_wocl_infringements` and `consecutive_early_starts`
-  on `/validate/fdp` with a 422 naming `/validate/sequence`. Retain both on `/calculate/max-fdp`.
+- **S13 done.** Every cumulative limit now carries its own clause in
+  `app/data/cumulative_limits.py`, and every literal at the emission site is gone. All nine
+  appendices were re-derived from the served text: Appendix 3 flight time is §9.1/§9.2 (was
+  §11.1/§11.2), recovery and days off are §8.5/§8.6 (was §10.5a/§10.5b), Appendix 6 duty time
+  is §9.1/§9.2 (was §10.1/§10.2 — a row the spec did not catch), and Appendix 4B duty time is
+  §7.1/§7.2. A structural test resolves every emitted citation through
+  `GET /sections/{id}` and asserts it belongs to the appendix that emitted it.
+
+  *One correction to the spec:* its S13 table gives Appendix 5A's 365-day flight time limit
+  as §5.1. §5.1 is the **384-hour** limit; the 365-day one is **§5.4**. The corpus governs
+  (§0.4 of the spec), so §5.4 is what is emitted.
+
+- **S9 done.** `_add_check` now reports a skipped check instead of dropping it, and both
+  counting functions are clamped to the period the data actually covers, so empty space is no
+  longer counted as days off or scanned for recovery blocks. Coverage is decided per window,
+  and the direction matters: accumulating limits (flight, duty) can only rise with more data,
+  so a total already breaching is a genuine breach; minimum requirements (days off, recovery)
+  can only be helped by more data, so one already met within covered data is genuinely met.
+  Either way an under-covered window yields `data_unavailable`, never a pass. A computed
+  figure is retained on a skipped check as an explicit lower bound.
+
+- **S10 done.** §2.1(b) caps `/calculate/max-fdp` (1900 local now returns 6.0h, not 8.0h) and
+  is a hard check on `/validate/fdp`. §2.5 counts late FDPs in a rolling 168-hour window on
+  `/validate/sequence`. `flight_time_limit_hours: null` is untouched and pinned.
+
+  *One deliberate departure from the spec:* it asks for a 0700 fallback on §2.1(a) where civil
+  twilight cannot be computed. §2.1(a) is the **earlier** of twilight and 0700, so treating
+  0700 as the boundary is stricter than the law and would fail the pre-0600 starts §2.3
+  expressly contemplates. Instead: a start at or after 0700 passes (it satisfies the earlier
+  of the two whatever twilight was), and an earlier start is `data_unavailable`. That is
+  precise rather than merely conservative, and the three-state contract now exists to carry it.
+
+- **S11 resolved as Option B, not the spec's preferred Option A.** Option A rejects
+  `consecutive_early_starts` on `/validate/fdp` with a 422 — which directly contradicts S6,
+  whose acceptance criteria require that parameter to raise a §11.1 violation "on both the
+  calculator and the validator". The two cannot both hold. Option B removes the asymmetry the
+  other way: `consecutive_wocl_infringements` is now read and enforced against §11.2 / §13.2 /
+  §10.2, so neither parameter is accepted-and-ignored.
+
+**Also fixed, found while implementing:**
+
+- **A falsy-`None` bug in all four validators.** `if not passed:` treated a `data_unavailable`
+  check (`passed=None`) as a failure and raised a violation from it — turning "could not
+  check" into "breached". Now `if passed is False:`.
+- **App 4B §5.4 and App 5 §5.2 are alternatives**, not two mandatory checks: both read "at
+  least 1 of the following". Demanding both raised a false violation that would block a lawful
+  roster.
+- **App 4B §5.3 and App 5 §5.3 are conditional** on a trigger the API is not told about
+  (3+ late-night FDPs, or an increased FDP). They are now surfaced as caller-must-verify
+  rather than asserted as checks.
+- **Appendix 5A had no 168-hour recovery requirement at all** — §4.1 is the 10h ODP and §4.2
+  is 2 days off in 384 hours. An inherited default was emitting a check with no clause behind it.
+
+**Parameter contract item cleared (deferred from Phase 2):** `following_off_duty_location` is
+now optional and read. Omitted, `preceding_fdp.location` governs as before; supplied and
+disagreeing, the request is rejected. Rather than change which field wins — which would move
+every existing caller's answer — the ambiguity is refused.
+
+*Four existing tests were amended*, each because it encoded a defect: one asserted a skipped
+check was absent from `checks[]`, one asserted both limbs of §5.4 were required, and two
+asserted `valid: true` on rosters whose cumulative windows could not be established.
+
+**Verdict semantics — decided against the spec's literal reading.** The spec (§8.3, S9) says
+`data_unavailable` must not count toward `valid: true`, which taken literally makes `valid`
+False for any roster validated without prior history. That is the *common* case: an operator
+checking a draft roster usually has no 365-day log to hand. A flag that fails every such
+request stops carrying information, and integrators learn to ignore it — which is worse than
+the problem it was meant to solve.
+
+So `valid` reports breaches only: **True when no check failed**. Completeness is a separate,
+explicit signal:
+
+| Field | Meaning |
+|-------|---------|
+| `valid` | Nothing was breached. |
+| `checks_skipped` | How many conditions could not be established. |
+| `warnings` | Names them, and says what to supply to resolve them. |
+
+A caller who needs a complete assessment requires `valid and checks_skipped == 0`. The
+underlying S9 fix is unchanged and is the part that mattered: the API no longer *invents*
+compliance — it does not count empty space as days off, and does not report finding a recovery
+block that was never there. It reports honestly that it could not tell, and leaves the
+significance of that to the caller.
 
 ### Phase 6 — S14, S17
 

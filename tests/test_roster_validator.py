@@ -68,10 +68,16 @@ class TestBasicRoster:
             _fdp("2026-03-25T22:00:00Z", "2026-03-26T08:00:00Z"),
         ]
         result = validate_roster("3", ROSTER_START, ROSTER_END, events)
-        assert result["valid"] is True
         assert result["summary"]["total_fdps"] == 2
         assert result["summary"]["total_off_duty_periods"] == 1
         assert result["summary"]["total_violations"] == 0
+
+        assert result["valid"] is True
+
+        # Phase 5 (S9): with no prior history the 28-day and 365-day windows
+        # cannot be established. That is reported through checks_skipped, not
+        # by failing the roster — `valid` tracks violations only.
+        assert result["summary"]["checks_skipped"] > 0
 
     def test_response_has_required_keys(self):
         events = [_fdp("2026-03-24T22:00:00Z", "2026-03-25T08:00:00Z")]

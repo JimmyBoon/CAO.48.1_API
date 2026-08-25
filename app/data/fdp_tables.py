@@ -143,6 +143,12 @@ class EarlyStartRules:
     reductions: tuple[tuple[int, float], ...] = ((4, 2.0), (5, 4.0))
     clause_limit: str = ""    # §11.1 — the prohibition
     clause_relief: str = ""   # §11.3 — the 4th/5th allowance
+    # §11.2 / §13.2 / §10.2: an FCM whose duties have already infringed
+    # 3 consecutive WOCLs must not be assigned an FDP that would again
+    # infringe the WOCL without an intervening off-duty period including a
+    # local night.
+    clause_wocl_limit: str = ""
+    max_consecutive_wocl: int = 3
 
 
 # ─── Appendix FDP configuration ──────────────────────────────────────
@@ -163,6 +169,24 @@ class AppendixFdpConfig:
     clause_split_sleeping: str = ""
     clause_split_resting: str = ""
     clause_split_night_overlap: str = ""
+
+    # ─── Appendix 1 §2.1 — the FDP must fall inside a fixed daily window ──
+    # (a) the earlier of morning civil twilight or 0700 local; and
+    # (b) 0100 local, at the commencing location, on the following day.
+    # Only (b) is computable here: civil twilight needs a position this API is
+    # not given. Because the (a) boundary is the EARLIER of the two, a start at
+    # or after 0700 satisfies it whatever twilight was — an earlier start
+    # cannot be resolved either way and is reported as data_unavailable rather
+    # than guessed in either direction.
+    fdp_window_start_local_minutes: Optional[int] = None
+    fdp_window_end_local_minutes: Optional[int] = None
+    clause_fdp_window_start: str = ""
+    clause_fdp_window_end: str = ""
+
+    # ─── Appendix 1 §2.5 — late FDPs ──────────────────────────────────
+    late_fdp_after_local_minutes: Optional[int] = None
+    late_fdp_max_in_168h: Optional[int] = None
+    clause_late_fdp: str = ""
 
 
 # ─── Sector key resolution ────────────────────────────────────────────
@@ -238,6 +262,13 @@ APP1 = AppendixFdpConfig(
             ("§3.1(d)", "The FCM considers himself or herself fit for the extension"),
         ),
     ),
+    fdp_window_start_local_minutes=_hm(7),      # §2.1(a)(ii)
+    fdp_window_end_local_minutes=_hm(1),        # §2.1(b), following day
+    clause_fdp_window_start="§2.1(a)",
+    clause_fdp_window_end="§2.1(b)",
+    late_fdp_after_local_minutes=_hm(22),       # §2.5
+    late_fdp_max_in_168h=3,
+    clause_late_fdp="§2.5",
     # Appendix 1 has no split-duty provision — the word does not appear
     # anywhere in the appendix. No clause reference is available because
     # there is no clause. See the note on _APP1_SPLIT.
@@ -372,6 +403,7 @@ APP2 = AppendixFdpConfig(
         max_consecutive=3,
         clause_limit="§13.1",
         clause_relief="§13.3",
+        clause_wocl_limit="§13.2",
     ),
     clause_split_sleeping="§4.1",
     clause_split_resting="§4.3",
@@ -435,6 +467,7 @@ APP3 = AppendixFdpConfig(
         max_consecutive=3,
         clause_limit="§11.1",
         clause_relief="§11.3",
+        clause_wocl_limit="§11.2",
     ),
     clause_split_sleeping="§3.1",
     clause_split_resting="§3.3",
@@ -495,6 +528,7 @@ APP4 = AppendixFdpConfig(
         max_consecutive=3,
         clause_limit="§11.1",
         clause_relief="§11.3",
+        clause_wocl_limit="§11.2",
     ),
     clause_split_sleeping="§3.1",
     clause_split_resting="§3.3",
@@ -778,6 +812,7 @@ APP6 = AppendixFdpConfig(
         max_consecutive=3,
         clause_limit="§10.1",
         clause_relief="§10.3",
+        clause_wocl_limit="§10.2",
     ),
     clause_split_sleeping="§3.1",
     clause_split_resting="§3.3",
