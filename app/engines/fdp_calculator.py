@@ -10,6 +10,7 @@ All logic derived from CAO 48.1 Instrument 2019 (Compilation No. 3, F2021C01239)
 
 from datetime import datetime
 
+from app.engines.time_windows import overlaps_local_window
 from app.engines.augmented_crew import (
     augmented_flight_time_note,
     check_sector_limit,
@@ -116,6 +117,36 @@ def calculate_max_fdp(
             })
 
     # ─── Apply split duty extension ───────────────────────────────
+    # `overlaps_2300_0529` gates §3.4(a), which after the S7 fix withholds the
+    # FDP increase entirely. A gate the caller can simply switch off is not a
+    # gate, and the API holds the rest period's timestamps and the local
+    # offset — so derive it, as /validate/sequence already does for
+    # crosses_wocl, and treat any caller-supplied value as advisory.
+    if split_duty and split_duty.get("rest_start_utc") and split_duty.get("rest_end_utc"):
+        window_start, window_end = config.split_duty.night_overlap_window
+        derived = overlaps_local_window(
+            split_duty["rest_start_utc"], split_duty["rest_end_utc"],
+            local_time_offset_hours, window_start, window_end,
+        )
+        claimed = split_duty.get("overlaps_2300_0529")
+        if claimed is not None and claimed != derived:
+            notes.append(
+                f"overlaps_2300_0529 was supplied as {claimed} but the rest "
+                f"period {split_duty['rest_start_utc']} to "
+                f"{split_duty['rest_end_utc']} at UTC{local_time_offset_hours:+g} "
+                f"{'does' if derived else 'does not'} include part of the "
+                f"{window_start // 60:02d}{window_start % 60:02d}-"
+                f"{window_end // 60:02d}{window_end % 60:02d} local window. "
+                f"The derived value is used."
+            )
+        split_duty = {**split_duty, "overlaps_2300_0529": derived}
+        notes.append(
+            f"Split-duty rest {'includes' if derived else 'does not include'} "
+            f"part of the {window_start // 60:02d}{window_start % 60:02d}-"
+            f"{window_end // 60:02d}{window_end % 60:02d} local window "
+            f"(derived from the rest period's own timestamps)."
+        )
+
     post_split_max = None
     if split_duty and config.split_duty.available:
         sd_result = _apply_split_duty(
@@ -131,6 +162,31 @@ def calculate_max_fdp(
                 "running_total_hours": running_total,
             })
         post_split_max = sd_result.get("post_split_max")
+
+        # App 4B §2.2 — the post-split remainder is capped by the Table 1.1
+        # limit for a NEW FDP commencing at the resumption time, not by a
+        # fixed number.
+        if (
+            config.split_duty.post_split_max_from_table
+            and sd_result["extension"] > 0
+            and split_duty.get("rest_end_utc")
+        ):
+            resumption = datetime.fromisoformat(
+                str(split_duty["rest_end_utc"]).replace("Z", "+00:00")
+            )
+            resumption_minutes = _utc_to_local_minutes(
+                resumption, local_time_offset_hours
+            )
+            post_split_max = _lookup_base_fdp(
+                table, resumption_minutes, sector_key, appendix,
+                preceding_off_duty_hours, split_duty,
+            )
+            notes.append(
+                f"Post-split remainder is limited to {post_split_max}h — the "
+                f"Table 1.1 limit for an FCM commencing a new FDP at the "
+                f"{resumption_minutes // 60:02d}{resumption_minutes % 60:02d} "
+                f"local resumption time (§2.2)."
+            )
 
     # ─── Appendix 1 §2.1(b) — the FDP must end by 0100 local next day ──
     if config.fdp_window_end_local_minutes is not None:
@@ -592,7 +648,7 @@ def _apply_split_duty(
     clause_resting = (config.clause_split_resting if config else "") or ""
     clause_night = (config.clause_split_night_overlap if config else "") or ""
 
-    if overlaps_night:
+    if overlaps_night and rules.night_overlap_gate:
         gate_clause = f"{clause_night}(a)" if clause_night else ""
         meets_gate = (
             accommodation == "sleeping"
@@ -633,27 +689,35 @@ def _apply_split_duty(
                 "explicit_zero": True,
             }
 
-        # §3.4(b): the maximum FDP may be increased to 16 hours.
-        new_total = min(current_fdp + duration, rules.night_overlap_cap_hours)
-        extension = new_total - current_fdp
-        clause = f"{clause_night}(b)" if clause_night else ""
-        description = (
-            f"Split-duty rest {duration}h sleeping overlapping the 2300-0529 "
-            f"window: +{extension}h (increased to at most "
-            f"{rules.night_overlap_cap_hours}h)"
-        )
+        if rules.night_overlap_grants_increase:
+            # §3.4(b) / §4.4(b): the maximum FDP may be increased to a stated
+            # ceiling. Appendix 4A has no such limb, so it falls through to
+            # the ordinary §3.1 treatment below.
+            new_total = min(current_fdp + duration, rules.night_overlap_cap_hours)
+            extension = new_total - current_fdp
+            clause = f"{clause_night}(b)" if clause_night else ""
+            description = (
+                f"Split-duty rest {duration}h sleeping overlapping the night "
+                f"window: +{extension}h (increased to at most "
+                f"{rules.night_overlap_cap_hours}h)"
+            )
+            notes.append(
+                f"Split duty: {duration}h sleeping with night overlap satisfies "
+                f"{clause_night}(a) -> increase to "
+                f"{rules.night_overlap_cap_hours}h ({clause})"
+            )
+            return {
+                "extension": extension,
+                "new_total": new_total,
+                "clause": clause,
+                "description": description,
+                "post_split_max": post_split_max,
+            }
         notes.append(
-            f"Split duty: {duration}h sleeping with night overlap satisfies "
-            f"{clause_night}(a) -> increase to {rules.night_overlap_cap_hours}h "
-            f"({clause})"
+            f"Split duty: {duration}h sleeping satisfies {clause_night}(a); "
+            f"this appendix states no separate night-overlap ceiling, so the "
+            f"ordinary split-duty increase applies."
         )
-        return {
-            "extension": extension,
-            "new_total": new_total,
-            "clause": clause,
-            "description": description,
-            "post_split_max": post_split_max,
-        }
 
     # Standard sleeping accommodation
     if accommodation == "sleeping" and duration >= rules.sleeping_min_hours:

@@ -43,6 +43,23 @@ class SplitDutyRules:
     night_overlap_min_sleeping: float = 7.0   # min sleeping hours if overlaps night window
     night_overlap_cap_hours: float = 16.0     # cap if night overlap sleeping met
     night_overlap_credit_reduction: bool = False  # True = no 2h ODP credit when night overlap
+    # Whether this appendix HAS a night-overlap condition at all. App 2 §4.4,
+    # App 3 §3.4, App 4 §3.4, App 4A §3.3 and App 6 §3.4 impose one; App 4B
+    # clause 2 and App 5 clause 2 do not, and gating them would deny an
+    # increase the instrument grants. Defaults False so a new appendix is not
+    # silently gated by inherited window values.
+    # App 4B §2.2: the remaining FDP after the rest ends must not exceed the
+    # Table 1.1 limit that would apply to an FCM commencing a NEW FDP at the
+    # resumption time. That is a lookup, not a constant, so post_split_max
+    # cannot express it — and 99.0 meant no post-split limit was applied at
+    # all on the appendix covering medical transport and emergency services.
+    post_split_max_from_table: bool = False
+    night_overlap_gate: bool = False
+    # Whether satisfying the gate also grants an increase to a stated ceiling
+    # (App 3 §3.4(b), App 4 §3.4(b)). Appendix 4A's §3.3 has no such limb —
+    # its (b) is the ODP-credit exclusion — so a compliant night-overlapping
+    # rest there takes the ordinary §3.1 treatment.
+    night_overlap_grants_increase: bool = False
     split_duty_odp_credit_hours: float = 2.0  # hours deducted from effective FDP for ODP calc
     available: bool = True             # False for appendices with no split duty
 
@@ -217,15 +234,16 @@ def resolve_sector_key_3col(sectors: int, single_pilot: bool) -> str:
 # APPENDIX 1 — Basic Limits
 # ═══════════════════════════════════════════════════════════════════════
 
-# NOTE (found during Phase 3, outside the remediation spec): Appendix 1
-# contains no split-duty provision — the word "split" does not appear anywhere
-# in the appendix, whose clauses are 1 Sleep opportunity, 2 FDP and flight time
-# limits, 3 Extensions, 4 Off-duty period limits, 5 Cumulative flight time.
-# These rules therefore grant a +1h FDP increase with no clause behind it, in
-# the permissive direction. Left in place rather than removed because Appendix 1
-# is in the spec's untested-areas list and deserves a deliberate pass, not a
-# change made in passing. No clause reference is emitted for it.
+# Appendix 1 contains NO split-duty provision — the word "split" does not
+# appear anywhere in the appendix, whose clauses are 1 Sleep opportunity,
+# 2 FDP and flight time limits, 3 Extensions, 4 Off-duty period limits,
+# 5 Cumulative flight time. Flagged in Phase 3 and disabled here, in the
+# deliberate Appendix-1 pass Phase 3 deferred to: these rules were granting a
+# +1h FDP increase with no clause behind it. The values are retained only so
+# the shape of the dataclass is satisfied; `available=False` means they are
+# never consulted.
 _APP1_SPLIT = SplitDutyRules(
+    available=False,
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
     sleeping_fixed_extension=1.0,
@@ -337,6 +355,8 @@ _APP2_TABLE_5_2_ROWS = [
 ]
 
 _APP2_SPLIT = SplitDutyRules(
+    night_overlap_gate=True,
+    night_overlap_grants_increase=True,
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
     sleeping_fixed_extension=4.0,
@@ -416,6 +436,8 @@ APP2 = AppendixFdpConfig(
 # ═══════════════════════════════════════════════════════════════════════
 
 _APP3_SPLIT = SplitDutyRules(
+    night_overlap_gate=True,
+    night_overlap_grants_increase=True,
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
     sleeping_fixed_extension=4.0,
@@ -480,6 +502,8 @@ APP3 = AppendixFdpConfig(
 # ═══════════════════════════════════════════════════════════════════════
 
 _APP4_SPLIT = SplitDutyRules(
+    night_overlap_gate=True,
+    night_overlap_grants_increase=True,
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
     sleeping_fixed_extension=4.0,
@@ -541,6 +565,8 @@ APP4 = AppendixFdpConfig(
 # ═══════════════════════════════════════════════════════════════════════
 
 _APP4A_SPLIT = SplitDutyRules(
+    night_overlap_gate=True,
+    night_overlap_grants_increase=False,
     sleeping_min_hours=4.0,
     sleeping_extension_type="duration",
     sleeping_fixed_extension=0.0,
@@ -572,6 +598,8 @@ APP4A = AppendixFdpConfig(
     split_duty=_APP4A_SPLIT,
     max_extension_hours=0.0,  # no extension provision
     extensions=ExtensionRules(available=False),
+    clause_split_sleeping="§3.1",
+    clause_split_night_overlap="§3.3",
 )
 
 
@@ -589,6 +617,7 @@ _APP4B_TIME_BANDS = [
 ]
 
 _APP4B_SPLIT = SplitDutyRules(
+    post_split_max_from_table=True,   # §2.2
     sleeping_min_hours=2.0,
     sleeping_extension_type="duration",
     sleeping_fixed_extension=0.0,
@@ -649,6 +678,8 @@ APP4B = AppendixFdpConfig(
                      "is satisfied each considers himself or herself fit"),
         ),
     ),
+    clause_split_sleeping="§2.1",
+    clause_split_resting="§2.4",
 )
 
 
@@ -705,6 +736,8 @@ APP5 = AppendixFdpConfig(
                      "is satisfied each considers himself or herself fit"),
         ),
     ),
+    clause_split_sleeping="§2.1",
+    clause_split_resting="§2.2",
 )
 
 
@@ -761,6 +794,8 @@ APP5A = AppendixFdpConfig(
 # ═══════════════════════════════════════════════════════════════════════
 
 _APP6_SPLIT = SplitDutyRules(
+    night_overlap_gate=True,
+    night_overlap_grants_increase=True,
     sleeping_min_hours=4.0,
     sleeping_extension_type="fixed",
     sleeping_fixed_extension=4.0,

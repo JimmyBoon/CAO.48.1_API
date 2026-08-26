@@ -30,10 +30,19 @@ def max_fdp(**overrides):
 
 
 def split(duration_hours, accommodation, overlaps=False):
-    end_h = 14 + int(duration_hours)
+    """
+    Build a split-duty rest of the requested length.
+
+    `overlaps_2300_0529` is now DERIVED from the rest period's own timestamps
+    (Phase 7), so the window has to genuinely overlap or genuinely not:
+    a 1400Z start at +8 is 2200 local and does overlap. Non-overlapping rests
+    therefore start 0400Z (1200 local).
+    """
+    start_h = 14 if overlaps else 4
+    end_h = start_h + int(duration_hours)
     end_m = int(round((duration_hours % 1) * 60))
     return {
-        "rest_start_utc": "2026-03-24T14:00:00Z",
+        "rest_start_utc": f"2026-03-24T{start_h:02d}:00:00Z",
         "rest_end_utc": f"2026-03-24T{end_h:02d}:{end_m:02d}:00Z",
         "accommodation": accommodation,
         "duration_hours": duration_hours,

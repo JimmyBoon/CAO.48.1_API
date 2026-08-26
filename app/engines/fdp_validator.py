@@ -163,6 +163,24 @@ def validate_fdp(
 
     # ─── Check 2: Extension permitted (only when extension provided) ───
     if extension:
+        # §5.3 / §3.1 grant the extension "in unforeseen operational
+        # circumstances". A pre-planned extension is, by definition, not
+        # unforeseen — the caller has already told us the provision does not
+        # apply. Both this field and captains_authority were accepted by the
+        # schema and read by nothing.
+        if ext_type == "unforeseen" and extension.get("pre_planned") is True:
+            ext_reasons.append(
+                f"pre_planned is true, but {ext_clause} grants an extension only "
+                f"in unforeseen operational circumstances. A pre-planned "
+                f"extension is not available under this provision"
+            )
+        if extension.get("captains_authority") is False:
+            ext_reasons.append(
+                f"captains_authority is false, but the extension under "
+                f"{ext_clause} is exercised at the discretion of the pilot in "
+                f"command (or, under Appendix 4B and 5, the FCM)"
+            )
+
         ext_passed = len(ext_reasons) == 0
         _add_check(
             check_id="extension_permitted",

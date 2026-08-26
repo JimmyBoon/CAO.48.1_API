@@ -170,13 +170,27 @@ class ExtensionInput(BaseModel):
         gt=0,
         description="Hours of extension applied beyond the normal FDP limit.",
     )
-    captains_authority: bool = Field(
-        default=False,
-        description="Whether the extension was invoked under captain's authority.",
+    captains_authority: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Whether the extension was exercised at the discretion of the pilot "
+            "in command (the FCM under Appendices 4B and 5). Omit if unknown — "
+            "an explicit False is read as an assertion that the discretion was "
+            "NOT exercised, which makes the extension unavailable. The default "
+            "was False, which meant every caller who left it out was silently "
+            "asserting the opposite of what they meant."
+        ),
     )
-    pre_planned: bool = Field(
-        default=False,
-        description="Whether the extension was pre-planned (operator-approved).",
+    pre_planned: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Whether the extension was pre-planned. §5.3 / §3.1 grant an "
+            "extension only 'in unforeseen operational circumstances', so an "
+            "explicit True makes the 'unforeseen' provision unavailable. It "
+            "does not affect Appendix 4B's 'urgent' provision (§3.2), which "
+            "turns on the operations manual rather than on foreseeability. "
+            "Omit if unknown."
+        ),
     )
 
 

@@ -2,13 +2,13 @@
 
 **Against:** `cao481-api-remediation-spec.md` (25 Aug 2026)
 **Codebase:** CAO 48.1 Compliance API v0.5.0, branch `Review-fix-1`
-**Baseline:** 270 tests passing before any change. **Now:** 593 passing — 26 added in
-Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4, 90 in Phase 5, 27 in Phase 6. Sixty-odd
-of those are pins written before the edits they protect. Five pre-existing tests were amended
-across Phases 2 and 5, each because it asserted a defect.
+**Baseline:** 270 tests passing before any change. **Now:** 673 passing — 26 added in
+Phase 1, 55 in Phase 2, 75 in Phase 3, 47 in Phase 4, 90 in Phase 5, 27 in Phase 6, 80 in
+Phase 7. Sixty-odd of those are pins written before the edits they protect. Five pre-existing
+tests were amended across Phases 2 and 5, each because it asserted a defect.
 
-**All six phases of §1 are complete.** What remains is §7 — the untested appendices and rule
-areas — with Appendix 4 the spec's stated priority.
+**All seven phases are complete.** All 17 spec findings are addressed, along with nineteen
+defects the spec did not identify. Nothing is outstanding.
 
 ---
 
@@ -394,11 +394,69 @@ significance of that to the caller.
 
   The `/validate/sequence` and `/validate/roster` prose was left alone, as the spec directed.
 
-### Phase 7 — coverage
+### Phase 7 — coverage — **COMPLETE**
 
-Appendices 4, 4A, 5, 6 and the standby / delayed-reporting / positioning / reassignment paths
-received no test coverage in the audit. Given that five of the confirmed defects are the same
-accepted-then-discarded pattern, expect more of it there. Prioritise **Appendix 4**.
+The spec predicted "expect similar findings" in the untested areas. There were six.
+
+**1. The night-overlap flag was taken on trust — the most serious of them.** Phase 3 made
+§3.4(a) a hard gate: a night-overlapping split-duty rest under 7 hours earns no FDP increase.
+But `overlaps_2300_0529` was *caller-supplied*, so a rest running 2200–0300 local — which
+plainly overlaps — could be flagged `false` and collect the full +4h, walking straight past the
+gate. The API holds the rest period's timestamps and the local offset; it is now derived, as
+`/validate/sequence` already does for `crosses_wocl`. A contradicting caller value is reported
+and overridden.
+
+*This also exposed mislabelled fixtures in my own Phase 3 tests*, which claimed
+`overlaps=False` for a 2200-local rest. The derivation caught them; the fixtures were wrong,
+not the code.
+
+**2. Phase 3's gate was applied where no such clause exists — a regression I introduced.**
+The gate ran off inherited window values, so Appendix 4B clause 2 and Appendix 5 clause 2 were
+gated too. Neither imposes a night-overlap condition, so a lawful roster was being denied its
+increase. `night_overlap_gate` is now explicit and set only for Appendices 2, 3, 4, 4A and 6.
+
+**3. Appendix 4A's gate is not Appendix 3's.** Its window is **2100–0329**, not 2300–0529
+(already correct in the data), and its §3.3 has no increase-to-a-ceiling limb — its (b) is the
+ODP-credit exclusion. A compliant night-overlapping rest there now takes the ordinary §3.1
+treatment rather than a ceiling that clause never granted.
+
+**4. Appendix 1's split-duty rules had no legislative basis.** Flagged in Phase 3 and deferred
+to this pass; disabled here. "Split" does not appear anywhere in Appendix 1, yet the table
+granted a +1h increase.
+
+**5. Appendix 4B §2.2 was unimplemented.** The post-split remainder must not exceed the
+Table 1.1 limit for an FCM commencing a *new* FDP at the resumption time — a lookup, not a
+constant, so `post_split_max_hours = 99.0` meant no post-split limit at all on the appendix
+covering medical transport and emergency service operations. Now computed from the resumption
+time.
+
+**6. Two extension fields were accepted and read by nothing** — the §8.1 contract violation.
+`pre_planned: true` contradicts §5.3 / §3.1, which grant an extension only "in unforeseen
+operational circumstances" (it does not affect 4B's urgent provision, which turns on the
+operations manual). `captains_authority: false` contradicts the PIC discretion the provision
+requires. Worse, `captains_authority` **defaulted to False**, so every caller omitting it was
+silently asserting the opposite of what they meant; both are now tri-state, and only an
+explicit `false` is read as an assertion.
+
+**A corpus defect, now resolved.** Appendix 4 Table 2.1's value for the **0500–0559** band was
+missing from the served text — a PDF-to-markdown conversion artefact that dropped the cell,
+not a parser bug. The implementation already used 9.0; **James confirmed 9 hours against the
+authoritative instrument**, and the cell has been restored to both copies of the corpus. The
+calculator was therefore always correct; what was broken was the audit trail, since a user
+following a citation to `GET /sections/APPENDIX 4.2` saw a table row with no figure in it.
+
+The whole class of defect is now pinned: a test asserts that **every value the rule tables can
+return appears in the legislative text that grants it**, across all nine appendices. A sweep
+for other dropped cells found none.
+
+**The unimplemented rule areas are honest gaps, not silent discards.** Standby, delayed
+reporting, reassignment and positioning accept *no* parameters, so no caller can supply data
+the API then ignores. Implementing them is new feature work rather than remediation. A test
+now asserts that no parameter for those areas appears without an implementation behind it.
+
+**Contract sweep.** `tests/test_phase7_coverage.py` includes the §8.1 test the spec asks for:
+every field on every request model must be referenced somewhere beyond its own declaration.
+It passes — no accepted-and-ignored parameter remains.
 
 ---
 
